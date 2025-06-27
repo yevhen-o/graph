@@ -37,7 +37,8 @@ const CITIES = [
 ];
 
 export class SupplyChainGenerator {
-  // Available sample datasets
+  // Available sample datasets (only files that are actually in git, not gitignored)
+  // Large files (>50MB) have been excluded and are available separately via Git LFS or cloud storage
   static readonly SAMPLE_DATASETS = [
     {
       name: "Electronics (50 nodes)",
@@ -70,69 +71,9 @@ export class SupplyChainGenerator {
       industry: "Manufacturing",
     },
     {
-      name: "Global Supply Chain (10k nodes)",
-      filename: "sample_10000_global.json",
-      nodeCount: 10000,
-      industry: "Global",
-    },
-    {
-      name: "Enterprise Scale (100k nodes)",
-      filename: "sample_100000_global.json",
-      nodeCount: 100000,
-      industry: "Global Enterprise",
-    },
-    {
-      name: "Enterprise Scale with Positions (100k nodes)",
-      filename: "sample_100000_static_positions.json",
-      nodeCount: 100000,
-      industry: "Global Enterprise",
-    },
-    {
-      name: "Massive Scale with Positions (1M nodes)",
-      filename: "sample_1000000_static_positions.json",
-      nodeCount: 1000000,
-      industry: "Global Manufacturing",
-    },
-    {
-      name: "Ultra Scale with Positions (5M nodes)",
-      filename: "sample_5000000_static_positions.json",
-      nodeCount: 5000000,
-      industry: "Global Manufacturing",
-    },
-    {
-      name: "MEGA Scale Wide & Mixed (7M nodes)",
-      filename: "sample_7000000_wide_mixed.json",
-      nodeCount: 7000000,
-      industry: "Global Manufacturing",
-    },
-    {
       name: "Large Coords Test (100K nodes)",
       filename: "sample_100000_large_coords.json",
       nodeCount: 100000,
-      industry: "Global Manufacturing",
-    },
-    {
-      name: "Compact Scale (10M nodes)",
-      filename: "sample_10000000_compact.json",
-      nodeCount: 10000000,
-      industry: "Global Manufacturing",
-    },
-    {
-      name: "EXTREME Scale with Positions (10M nodes)",
-      filename: "sample_10000000_static_positions.json",
-      nodeCount: 10000000,
-      industry: "Global Manufacturing",
-    },
-    {
-      name: "Optimal Scale Wide & Mixed (4M nodes)",
-      filename: "sample_4000000_optimal.json",
-      nodeCount: 4000000,
-      industry: "Global Manufacturing",
-    },
-    {
-      name: "Ultra Wide & Mixed (2M nodes)",
-      filename: "sample_2000000_ultra_wide.json",
-      nodeCount: 2000000,
       industry: "Global Manufacturing",
     },
     {
