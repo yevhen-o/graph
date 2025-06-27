@@ -141,6 +141,12 @@ export class SupplyChainGenerator {
       nodeCount: 1373,
       industry: "Automotive Manufacturing",
     },
+    {
+      name: "🔋 Lithium Crisis Simulation",
+      filename: "sample_automotive_lithium_crisis.json",
+      nodeCount: 1301,
+      industry: "Automotive with EV Supply Chain",
+    },
   ];
 
   static async loadSampleData(filename: string): Promise<SupplyChainGraph> {

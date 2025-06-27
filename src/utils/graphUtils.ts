@@ -1,5 +1,4 @@
 import Graph from "graphology";
-import { scaleOrdinal } from "d3-scale";
 import {
   SupplyChainGraph,
   SupplyChainNode,
@@ -7,7 +6,7 @@ import {
   EdgeType,
 } from "../types/supplyChain";
 
-export type ColorMode = 'nodeType' | 'riskScore';
+export type ColorMode = 'nodeType' | 'riskScore' | 'crisis';
 
 export interface CosmosNode {
   id: string;
@@ -32,31 +31,19 @@ export interface CosmosGraphData {
 }
 
 export class GraphUtils {
-  static convertToCosmosFormat(graph: SupplyChainGraph, colorMode: ColorMode = 'nodeType'): CosmosGraphData {
-    const nodeColorScale = scaleOrdinal<NodeType, string>()
-      .domain([
-        NodeType.RAW_MATERIALS,
-        NodeType.SUPPLIER,
-        NodeType.MANUFACTURER,
-        NodeType.DISTRIBUTOR,
-        NodeType.RETAILER,
-        NodeType.WAREHOUSE,
-      ])
-      .range([
-        "#8b4513",
-        "#ff6b6b",
-        "#4ecdc4",
-        "#45b7d1",
-        "#96ceb4",
-        "#feca57",
-      ]);
+  static convertToCosmosFormat(
+    graph: SupplyChainGraph, 
+    colorMode: ColorMode = 'nodeType',
+    affectedNodes?: Set<string>
+  ): CosmosGraphData {
+    // Note: nodeColorScale removed as it's not used in crisis mode
 
     const nodes: CosmosNode[] = graph.nodes.map((node) => ({
       id: node.id,
       label: node.label,
       x: node.x,
       y: node.y,
-      color: colorMode === 'riskScore' ? this.getRiskScoreColor(node) : nodeColorScale(node.type),
+      color: this.getNodeColor(node, colorMode, affectedNodes),
       size: this.getNodeSize(node),
       tier: node.tier,
     }));
@@ -74,12 +61,13 @@ export class GraphUtils {
   static createGraphologyGraph(
     graph: SupplyChainGraph,
     useStaticLayout: boolean = true,
-    colorMode: ColorMode = 'nodeType'
+    colorMode: ColorMode = 'nodeType',
+    affectedNodes?: Set<string>
   ): Graph {
     const g = new Graph({ type: "directed", multi: false });
 
     graph.nodes.forEach((node) => {
-      const nodeColor = colorMode === 'riskScore' ? this.getRiskScoreColor(node) : this.getNodeColor(node.type);
+      const nodeColor = this.getNodeColor(node, colorMode, affectedNodes);
       
       const nodeSize = this.getNodeSize(node);
       const nodeAttributes: any = {
@@ -163,7 +151,31 @@ export class GraphUtils {
     );
   }
 
-  private static getNodeColor(type: NodeType): string {
+  private static getNodeColor(
+    node: SupplyChainNode | NodeType, 
+    colorMode: ColorMode = 'nodeType', 
+    affectedNodes?: Set<string>
+  ): string {
+    // Handle legacy calls with just NodeType
+    if (typeof node === 'string') {
+      return this.getNodeTypeColor(node)
+    }
+
+    // Crisis mode takes priority
+    if (colorMode === 'crisis' && affectedNodes) {
+      return this.getCrisisNodeColor(node, affectedNodes)
+    }
+
+    // Risk score mode
+    if (colorMode === 'riskScore') {
+      return this.getRiskScoreColor(node)
+    }
+
+    // Default to node type colors
+    return this.getNodeTypeColor(node.type)
+  }
+
+  private static getNodeTypeColor(type: NodeType): string {
     const colors = {
       [NodeType.RAW_MATERIALS]: "#8b4513",
       [NodeType.SUPPLIER]: "#ff6b6b",
@@ -174,6 +186,16 @@ export class GraphUtils {
       [NodeType.CUSTOMER]: "#a29bfe",
     };
     return colors[type] || "#95a5a6";
+  }
+
+  private static getCrisisNodeColor(node: SupplyChainNode, affectedNodes: Set<string>): string {
+    if (affectedNodes.has(node.id)) {
+      // Red for crisis-affected nodes
+      return "#e74c3c"  // Crisis red
+    } else {
+      // Green for normal operations
+      return "#27ae60"  // Normal green
+    }
   }
 
   private static getRiskScoreColor(node: SupplyChainNode): string {

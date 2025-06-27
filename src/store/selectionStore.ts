@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { SelectionStore, SelectedItem } from '../types/selection'
 import { SupplyChainNode, SupplyChainEdge } from '../types/supplyChain'
+import { PathTracer } from '../utils/pathTracing'
 
 export const useSelectionStore = create<SelectionStore>((set, get) => ({
   // Selection state
@@ -13,6 +14,17 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
   graphData: null,
   fullGraphData: null,
   isLoading: false,
+
+  // Crisis simulation state
+  crisis: {
+    crisisMode: false,
+    crisisSource: null,
+    crisisType: '',
+    affectedNodes: new Set(),
+    affectedEdges: new Set(),
+    impactAnalysis: null,
+    showCrisisLegend: false
+  },
 
   // Actions
   addNode: (node: SupplyChainNode) => {
@@ -224,5 +236,109 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
   getNodeById: (nodeId: string) => {
     const state = get()
     return state.graphData?.nodes.find(node => node.id === nodeId)
+  },
+
+  // Crisis simulation actions
+  enableCrisisMode: (sourceNodeId: string, crisisType: string) => {
+    set((state) => {
+      if (!state.graphData) return state
+
+      const pathTracer = new PathTracer(state.graphData)
+      const impactAnalysis = pathTracer.traceDownstreamImpact(sourceNodeId, {
+        maxDepth: 10,
+        includeIndirect: true,
+        weightThreshold: 5
+      })
+
+      console.log('Crisis simulation activated:', {
+        source: sourceNodeId,
+        type: crisisType,
+        affectedNodes: impactAnalysis.affectedNodes.size,
+        totalImpact: impactAnalysis.totalImpact
+      })
+
+      return {
+        crisis: {
+          crisisMode: true,
+          crisisSource: sourceNodeId,
+          crisisType,
+          affectedNodes: impactAnalysis.affectedNodes,
+          affectedEdges: impactAnalysis.affectedEdges,
+          impactAnalysis,
+          showCrisisLegend: true
+        }
+      }
+    })
+  },
+
+  disableCrisisMode: () => {
+    set({
+      crisis: {
+        crisisMode: false,
+        crisisSource: null,
+        crisisType: '',
+        affectedNodes: new Set(),
+        affectedEdges: new Set(),
+        impactAnalysis: null,
+        showCrisisLegend: false
+      }
+    })
+  },
+
+  toggleCrisisMode: () => {
+    const state = get()
+    if (state.crisis.crisisMode) {
+      state.disableCrisisMode()
+    } else {
+      // Try to activate lithium crisis if available
+      if (state.graphData) {
+        const lithiumSources = state.graphData.nodes.filter(node => 
+          node.type === 'raw_materials' && 
+          node.label?.toLowerCase().includes('lithium')
+        )
+        if (lithiumSources.length > 0) {
+          state.enableCrisisMode(lithiumSources[0].id, 'lithium_shortage')
+        }
+      }
+    }
+  },
+
+  setCrisisSource: (sourceNodeId: string, crisisType: string) => {
+    const state = get()
+    if (state.crisis.crisisMode) {
+      state.enableCrisisMode(sourceNodeId, crisisType)
+    }
+  },
+
+  isNodeAffectedByCrisis: (nodeId: string) => {
+    const state = get()
+    return state.crisis.crisisMode && state.crisis.affectedNodes.has(nodeId)
+  },
+
+  isEdgeAffectedByCrisis: (edgeId: string) => {
+    const state = get()
+    return state.crisis.crisisMode && state.crisis.affectedEdges.has(edgeId)
+  },
+
+  getCrisisImpactStats: () => {
+    const state = get()
+    if (!state.crisis.impactAnalysis) {
+      return { affectedNodes: 0, totalImpact: 0, criticalPaths: 0 }
+    }
+
+    return {
+      affectedNodes: state.crisis.affectedNodes.size,
+      totalImpact: state.crisis.impactAnalysis.totalImpact,
+      criticalPaths: state.crisis.impactAnalysis.criticalPaths.length
+    }
+  },
+
+  toggleCrisisLegend: () => {
+    set((state) => ({
+      crisis: {
+        ...state.crisis,
+        showCrisisLegend: !state.crisis.showCrisisLegend
+      }
+    }))
   }
 }))

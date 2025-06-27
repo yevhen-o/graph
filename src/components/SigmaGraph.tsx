@@ -40,7 +40,8 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     isLoading,
     setGraphData,
     setFullGraphData,
-    setLoading
+    setLoading,
+    crisis
   } = useSelectionStore()
 
   const initializeSigma = useCallback((data: SupplyChainGraphType, mode?: ColorMode) => {
@@ -64,7 +65,8 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     
     // Create a graphology graph
     const currentMode = mode || colorMode
-    const graph = GraphUtils.createGraphologyGraph(data, useStaticLayout, currentMode)
+    const affectedNodes = crisis.crisisMode ? crisis.affectedNodes : undefined
+    const graph = GraphUtils.createGraphologyGraph(data, useStaticLayout, currentMode, affectedNodes)
     
     // Only apply layout if no pre-calculated positions or if static layout is disabled
     if (!hasPositions || !useStaticLayout) {
@@ -124,7 +126,7 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       }
     })
     
-  }, [enablePhysics, useStaticLayout, colorMode])
+  }, [enablePhysics, useStaticLayout, colorMode, crisis])
 
   const generateGraph = useCallback(async () => {
     setLoading(true)

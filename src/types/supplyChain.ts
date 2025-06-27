@@ -35,6 +35,9 @@ export interface SupplyChainNode {
   size?: 'small' | 'medium' | 'large' | number
   industry?: string
   established?: number
+  material?: string
+  importance?: number
+  origin?: string
 }
 
 export interface SupplyChainEdge {

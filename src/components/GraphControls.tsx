@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { NodeType } from '../types/supplyChain'
 import { SupplyChainGenerator } from '../data/supplyChainGenerator'
 import { GraphUtils, ColorMode } from '../utils/graphUtils'
+import CrisisControlPanel from './CrisisControlPanel'
 
 interface GraphControlsProps {
   isLoading: boolean
@@ -281,6 +282,17 @@ const GraphControls: React.FC<GraphControlsProps> = ({
                   >
                     Risk Score
                   </button>
+                  <button
+                    onClick={() => onColorModeChange('crisis')}
+                    className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+                      colorMode === 'crisis' 
+                        ? 'bg-red-600 hover:bg-red-700' 
+                        : 'bg-gray-600 hover:bg-gray-700'
+                    }`}
+                    data-testid="color-mode-crisis"
+                  >
+                    Crisis Mode
+                  </button>
                 </div>
                 
                 {colorMode === 'riskScore' && (
@@ -304,9 +316,28 @@ const GraphControls: React.FC<GraphControlsProps> = ({
                     <p>• Each type has a distinct color</p>
                   </div>
                 )}
+
+                {colorMode === 'crisis' && (
+                  <div className="bg-red-900 rounded p-3">
+                    <div className="text-xs text-red-200 mb-2">Crisis Mode Active:</div>
+                    <div className="flex items-center space-x-2 mb-1">
+                      <div className="w-3 h-3 rounded-full bg-red-400"></div>
+                      <span className="text-xs text-red-200">Crisis Affected</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-green-400"></div>
+                      <span className="text-xs text-red-200">Normal Operations</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
+
+          {/* Crisis Control Panel */}
+          <div className="p-4 border-b border-gray-700">
+            <CrisisControlPanel />
+          </div>
 
           {onLoadSampleData && (
             <div className="p-4 border-b border-gray-700">

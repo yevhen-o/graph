@@ -1,4 +1,5 @@
 import { SupplyChainNode, SupplyChainEdge, SupplyChainGraph } from './supplyChain'
+import { PathTraceResult } from '../utils/pathTracing'
 
 export type SelectionType = 'node' | 'edge'
 
@@ -7,6 +8,16 @@ export interface SelectedItem {
   type: SelectionType
   data: SupplyChainNode | SupplyChainEdge
   timestamp: number
+}
+
+export interface CrisisState {
+  crisisMode: boolean
+  crisisSource: string | null
+  crisisType: string
+  affectedNodes: Set<string>
+  affectedEdges: Set<string>
+  impactAnalysis: PathTraceResult | null
+  showCrisisLegend: boolean
 }
 
 export interface SelectionState {
@@ -18,6 +29,8 @@ export interface SelectionState {
   graphData: SupplyChainGraph | null
   fullGraphData: SupplyChainGraph | null
   isLoading: boolean
+  // Crisis simulation state
+  crisis: CrisisState
 }
 
 export interface SelectionActions {
@@ -38,6 +51,15 @@ export interface SelectionActions {
   setLoading: (loading: boolean) => void
   updateNodeRiskScore: (nodeId: string, riskScore: number) => void
   getNodeById: (nodeId: string) => SupplyChainNode | undefined
+  // Crisis simulation actions
+  enableCrisisMode: (sourceNodeId: string, crisisType: string) => void
+  disableCrisisMode: () => void
+  toggleCrisisMode: () => void
+  setCrisisSource: (sourceNodeId: string, crisisType: string) => void
+  isNodeAffectedByCrisis: (nodeId: string) => boolean
+  isEdgeAffectedByCrisis: (edgeId: string) => boolean
+  getCrisisImpactStats: () => { affectedNodes: number; totalImpact: number; criticalPaths: number }
+  toggleCrisisLegend: () => void
 }
 
 export type SelectionStore = SelectionState & SelectionActions

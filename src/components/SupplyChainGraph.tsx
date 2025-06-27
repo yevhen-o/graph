@@ -48,7 +48,8 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
     isLoading,
     setGraphData,
     setFullGraphData,
-    setLoading
+    setLoading,
+    crisis
   } = useSelectionStore()
 
   const initializeCosmos = useCallback((data: CosmosGraphData, originalData?: SupplyChainGraphType) => {
@@ -272,7 +273,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       const optimizedGraph = applyLevelOfDetail(filteredGraph, currentZoomLevel)
       setGraphData(optimizedGraph)
       
-      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
+      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode, crisis.crisisMode ? crisis.affectedNodes : undefined)
       
       await PerformanceUtils.measureAsyncPerformance(
         'Graph Rendering',
@@ -319,7 +320,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       const optimizedGraph = applyLevelOfDetail(filteredGraph, currentZoomLevel)
       setGraphData(optimizedGraph)
       
-      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
+      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode, crisis.crisisMode ? crisis.affectedNodes : undefined)
       
       await PerformanceUtils.measureAsyncPerformance(
         'Graph Rendering',
@@ -348,7 +349,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       const optimizedGraph = applyLevelOfDetail(filteredGraph, currentZoomLevel)
       setGraphData(optimizedGraph)
       
-      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
+      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode, crisis.crisisMode ? crisis.affectedNodes : undefined)
       
       await PerformanceUtils.measureAsyncPerformance(
         'Filter Update',
@@ -364,7 +365,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
     setColorMode(newColorMode)
     
     if (graphData) {
-      const cosmosData = GraphUtils.convertToCosmosFormat(graphData, newColorMode)
+      const cosmosData = GraphUtils.convertToCosmosFormat(graphData, newColorMode, crisis.crisisMode ? crisis.affectedNodes : undefined)
       
       await PerformanceUtils.measureAsyncPerformance(
         'Color Mode Update',
@@ -427,7 +428,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
         setGraphData(optimizedGraph)
         setCurrentDataset(undefined)
         
-        const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
+        const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode, crisis.crisisMode ? crisis.affectedNodes : undefined)
         await PerformanceUtils.measureAsyncPerformance(
           'Graph Rendering',
           async () => {
@@ -473,10 +474,10 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
   useEffect(() => {
     if (graphData && cosmosRef.current) {
       console.log('Graph data changed, refreshing Cosmos visualization')
-      const cosmosData = GraphUtils.convertToCosmosFormat(graphData, colorMode)
+      const cosmosData = GraphUtils.convertToCosmosFormat(graphData, colorMode, crisis.crisisMode ? crisis.affectedNodes : undefined)
       initializeCosmos(cosmosData, graphData)
     }
-  }, [graphData, colorMode, initializeCosmos])
+  }, [graphData, colorMode, initializeCosmos, crisis])
 
   return (
     <div className="w-full h-full flex">
