@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { NodeType } from '../types/supplyChain'
 import { SupplyChainGenerator } from '../data/supplyChainGenerator'
+import { GraphUtils, ColorMode } from '../utils/graphUtils'
 
 interface GraphControlsProps {
   isLoading: boolean
@@ -22,6 +23,13 @@ interface GraphControlsProps {
   physicsEnabled: boolean
   onLoadSampleData?: (filename: string) => void
   currentDataset?: string
+  availableNodeTypes?: NodeType[]
+  availableTiers?: number[]
+  hasStaticLayout?: boolean
+  onStaticLayoutToggle?: () => void
+  useStaticLayout?: boolean
+  colorMode?: ColorMode
+  onColorModeChange?: (mode: ColorMode) => void
 }
 
 const GraphControls: React.FC<GraphControlsProps> = ({
@@ -43,9 +51,20 @@ const GraphControls: React.FC<GraphControlsProps> = ({
   onExportPNG,
   physicsEnabled,
   onLoadSampleData,
-  currentDataset
+  currentDataset,
+  availableNodeTypes,
+  availableTiers,
+  colorMode = 'nodeType',
+  onColorModeChange
 }) => {
   const [isExpanded, setIsExpanded] = useState(true)
+  
+  // Use available options or fallback to all options
+  const allNodeTypes = availableNodeTypes || Object.values(NodeType)
+  const allTiers = availableTiers || [0, 1, 2, 3, 4, 5]
+  const hasActiveNodeFilter = selectedNodeTypes.length !== allNodeTypes.length
+  const hasActiveTierFilter = selectedTiers.length !== allTiers.length
+  const hasActiveFilters = hasActiveNodeFilter || hasActiveTierFilter
 
   const handleNodeTypeChange = (nodeType: NodeType) => {
     const newSelection = selectedNodeTypes.includes(nodeType)
@@ -64,7 +83,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
   }
 
   const handleSelectAllNodeTypes = () => {
-    onFilterChange(Object.values(NodeType), selectedTiers)
+    onFilterChange(allNodeTypes, selectedTiers)
   }
 
   const handleDeselectAllNodeTypes = () => {
@@ -72,14 +91,19 @@ const GraphControls: React.FC<GraphControlsProps> = ({
   }
 
   const handleSelectAllTiers = () => {
-    onFilterChange(selectedNodeTypes, [1, 2, 3, 4, 5])
+    onFilterChange(selectedNodeTypes, allTiers)
   }
 
   const handleDeselectAllTiers = () => {
     onFilterChange(selectedNodeTypes, [])
   }
 
+  const handleClearAllFilters = () => {
+    onFilterChange(allNodeTypes, allTiers)
+  }
+
   const nodeTypeColors = {
+    [NodeType.RAW_MATERIALS]: '#8b4513',
     [NodeType.SUPPLIER]: '#ff6b6b',
     [NodeType.MANUFACTURER]: '#4ecdc4',
     [NodeType.DISTRIBUTOR]: '#45b7d1',
@@ -89,6 +113,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
   }
 
   const nodeTypeLabels = {
+    [NodeType.RAW_MATERIALS]: 'Raw Materials',
     [NodeType.SUPPLIER]: 'Suppliers',
     [NodeType.MANUFACTURER]: 'Manufacturers',
     [NodeType.DISTRIBUTOR]: 'Distributors',
@@ -100,14 +125,23 @@ const GraphControls: React.FC<GraphControlsProps> = ({
   return (
     <div className={`bg-gray-800 text-white transition-all duration-300 ${isExpanded ? 'w-80' : 'w-12'} flex flex-col border-r border-gray-700`}>
       <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-        <h2 className={`font-bold text-lg ${isExpanded ? 'block' : 'hidden'}`}>
-          Supply Chain Graph
-        </h2>
+        <div className={`${isExpanded ? 'block' : 'hidden'}`}>
+          <h2 className="font-bold text-lg">Supply Chain Graph</h2>
+          {hasActiveFilters && (
+            <div className="text-xs text-orange-400 flex items-center space-x-1 mt-1">
+              <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+              <span>Filters active</span>
+            </div>
+          )}
+        </div>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="p-2 rounded hover:bg-gray-700 transition-colors"
+          className="p-2 rounded hover:bg-gray-700 transition-colors relative"
           title={isExpanded ? 'Collapse Panel' : 'Expand Panel'}
         >
+          {hasActiveFilters && !isExpanded && (
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-orange-400 rounded-full"></div>
+          )}
           <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
@@ -115,7 +149,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
       </div>
 
       {isExpanded && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" data-testid="left-panel-content">
           <div className="p-4 border-b border-gray-700">
             <h3 className="font-semibold mb-3">Graph Statistics</h3>
             <div className="space-y-2 text-sm">
@@ -160,7 +194,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
             </div>
           </div>
 
-          <div className="p-4 border-b border-gray-700">
+          <div className="p-4 border-b border-gray-700" data-testid="controls-section">
             <h3 className="font-semibold mb-3">Controls</h3>
             <div className="space-y-3">
               <button
@@ -208,8 +242,71 @@ const GraphControls: React.FC<GraphControlsProps> = ({
                   {performanceMode ? 'Performance Mode: ON' : 'Performance Mode: OFF'}
                 </button>
               )}
+              
+              {hasActiveFilters && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="w-full py-2 px-3 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium transition-colors"
+                >
+                  Clear All Filters
+                </button>
+              )}
             </div>
           </div>
+
+          {onColorModeChange && (
+            <div className="p-4 border-b border-gray-700" data-testid="color-mode-section">
+              <h3 className="font-semibold mb-3">Color Mode</h3>
+              <div className="space-y-3">
+                <div className="flex space-x-2" data-testid="color-mode-buttons">
+                  <button
+                    onClick={() => onColorModeChange('nodeType')}
+                    className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+                      colorMode === 'nodeType' 
+                        ? 'bg-blue-600 hover:bg-blue-700' 
+                        : 'bg-gray-600 hover:bg-gray-700'
+                    }`}
+                    data-testid="color-mode-node-type"
+                  >
+                    Node Types
+                  </button>
+                  <button
+                    onClick={() => onColorModeChange('riskScore')}
+                    className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
+                      colorMode === 'riskScore' 
+                        ? 'bg-red-600 hover:bg-red-700' 
+                        : 'bg-gray-600 hover:bg-gray-700'
+                    }`}
+                    data-testid="color-mode-risk-score"
+                  >
+                    Risk Score
+                  </button>
+                </div>
+                
+                {colorMode === 'riskScore' && (
+                  <div className="bg-gray-700 rounded p-3">
+                    <div className="text-xs text-gray-300 mb-2">Risk Score Legend:</div>
+                    <div className="flex items-center space-x-2 mb-1">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <span className="text-xs">0.0 - Low Risk</span>
+                    </div>
+                    <div className="h-2 bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 rounded mb-1"></div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span className="text-xs">1.0 - High Risk</span>
+                    </div>
+                  </div>
+                )}
+                
+                {colorMode === 'nodeType' && (
+                  <div className="text-xs text-gray-400">
+                    <p>• Colors represent node types</p>
+                    <p>• Each type has a distinct color</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {onLoadSampleData && (
             <div className="p-4 border-b border-gray-700">
@@ -232,7 +329,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
                     <option
                       key={dataset.filename}
                       value={dataset.filename}
-                      title={`${dataset.industry} supply chain with ${dataset.nodeCount} nodes`}
+                      title={`${dataset.industry} supply chain with ${GraphUtils.formatNumber(dataset.nodeCount)} nodes`}
                     >
                       {dataset.name}
                     </option>
@@ -263,7 +360,14 @@ const GraphControls: React.FC<GraphControlsProps> = ({
 
           <div className="p-4 border-b border-gray-700">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Node Types</h3>
+              <div>
+                <h3 className="font-semibold">Node Types</h3>
+                {hasActiveNodeFilter && (
+                  <div className="text-xs text-orange-400">
+                    {selectedNodeTypes.length}/{allNodeTypes.length} selected
+                  </div>
+                )}
+              </div>
               <div className="flex space-x-2">
                 <button
                   onClick={handleSelectAllNodeTypes}
@@ -281,7 +385,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
             </div>
             
             <div className="space-y-2">
-              {Object.values(NodeType).map(nodeType => (
+              {allNodeTypes.map(nodeType => (
                 <label key={nodeType} className="flex items-center space-x-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -301,7 +405,14 @@ const GraphControls: React.FC<GraphControlsProps> = ({
 
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold">Supply Chain Tiers</h3>
+              <div>
+                <h3 className="font-semibold">Supply Chain Tiers</h3>
+                {hasActiveTierFilter && (
+                  <div className="text-xs text-orange-400">
+                    {selectedTiers.length}/{allTiers.length} selected
+                  </div>
+                )}
+              </div>
               <div className="flex space-x-2">
                 <button
                   onClick={handleSelectAllTiers}
@@ -319,7 +430,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
             </div>
             
             <div className="space-y-2">
-              {[1, 2, 3, 4, 5].map(tier => (
+              {allTiers.map(tier => (
                 <label key={tier} className="flex items-center space-x-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -327,7 +438,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
                     onChange={() => handleTierChange(tier)}
                     className="rounded"
                   />
-                  <span className="text-sm">Tier {tier}</span>
+                  <span className="text-sm">Tier {tier} {tier === 0 ? '(Raw Materials)' : ''}</span>
                 </label>
               ))}
             </div>

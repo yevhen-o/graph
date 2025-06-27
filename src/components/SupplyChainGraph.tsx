@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Graph } from '@cosmos.gl/graph'
 import { SupplyChainGenerator } from '../data/supplyChainGenerator'
-import { GraphUtils, CosmosGraphData } from '../utils/graphUtils'
+import { GraphUtils, CosmosGraphData, ColorMode } from '../utils/graphUtils'
 import { SupplyChainGraph as SupplyChainGraphType, NodeType } from '../types/supplyChain'
 import { PerformanceUtils } from '../utils/performanceUtils'
 import GraphControls from './GraphControls'
@@ -18,11 +18,13 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 interface SupplyChainGraphProps {
   nodeCount?: number
   enablePhysics?: boolean
+  useStaticLayout?: boolean
 }
 
 const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({ 
   nodeCount = 50, // Start with smaller count for debugging
-  enablePhysics = true 
+  enablePhysics = true,
+  useStaticLayout = true 
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const cosmosRef = useRef<Graph | null>(null)
@@ -30,11 +32,15 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
   const [fullGraphData, setFullGraphData] = useState<SupplyChainGraphType | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<NodeType[]>(Object.values(NodeType))
-  const [selectedTiers, setSelectedTiers] = useState<number[]>([1, 2, 3, 4, 5])
+  const [selectedTiers, setSelectedTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
   const [currentZoomLevel] = useState(1.0)
   const [renderProgress, setRenderProgress] = useState(0)
-  const [performanceMode, setPerformanceMode] = useState(nodeCount > 10000)
+  const [performanceMode, setPerformanceMode] = useState(nodeCount > 50000)
   const [currentDataset, setCurrentDataset] = useState<string | undefined>(undefined)
+  const [availableNodeTypes, setAvailableNodeTypes] = useState<NodeType[]>(Object.values(NodeType))
+  const [availableTiers, setAvailableTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
+  const [, setHasPreCalculatedPositions] = useState(false)
+  const [colorMode, setColorMode] = useState<ColorMode>('nodeType')
 
   const initializeCosmos = useCallback((data: CosmosGraphData) => {
     if (!containerRef.current) return
@@ -50,16 +56,21 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
     containerRef.current.innerHTML = ''
     
     console.log('Initializing graph with', data.nodes.length, 'nodes and', data.links.length, 'links')
+    
+    // Check if nodes have pre-calculated positions
+    const hasPositions = data.nodes.some(node => node.x !== undefined && node.y !== undefined)
+    setHasPreCalculatedPositions(hasPositions)
+    console.log('Has pre-calculated positions:', hasPositions)
 
     const config = {
-      spaceSize: 8192,
+      spaceSize: data.nodes.length > 5000000 ? 32768 : data.nodes.length > 100000 ? 16384 : 8192, // Ultra-large space for extreme graphs
       simulationFriction: 0.9,
       simulationGravity: 0.0,
       simulationRepulsion: 1.0,
       curvedLinks: false,
       fitViewOnInit: false, // We'll fit manually
       fitViewDelay: 0,
-      fitViewPadding: 0.85,
+      fitViewPadding: data.nodes.length > 100000 ? 0.95 : 0.85, // More padding for large graphs
       enableDrag: true,
       backgroundColor: [0.13, 0.13, 0.13, 1.0] as [number, number, number, number], // Dark gray background
       onClick: (index: number | undefined, _pointPosition: [number, number] | undefined, _event: MouseEvent) => {
@@ -81,9 +92,17 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
     const pointSizes = new Float32Array(data.nodes.length)
     
     data.nodes.forEach((node, i) => {
-      // Positions in a smaller, more visible range
-      pointPositions[i * 2] = (Math.random() - 0.5) * 200
-      pointPositions[i * 2 + 1] = (Math.random() - 0.5) * 200
+      // Use pre-calculated positions if available and static layout is enabled
+      if (hasPositions && useStaticLayout && node.x !== undefined && node.y !== undefined) {
+        // Scale coordinates to fill the available space properly
+        const scaleFactor = data.nodes.length > 5000000 ? 2 : data.nodes.length > 500000 ? 1.5 : 1
+        pointPositions[i * 2] = node.x * scaleFactor
+        pointPositions[i * 2 + 1] = node.y * scaleFactor
+      } else {
+        // Random positions in a smaller, more visible range
+        pointPositions[i * 2] = (Math.random() - 0.5) * 200
+        pointPositions[i * 2 + 1] = (Math.random() - 0.5) * 200
+      }
       
       const color = node.color || '#69b3a2'
       const rgb = hexToRgb(color)
@@ -92,7 +111,10 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       pointColors[i * 4 + 2] = rgb.b / 255
       pointColors[i * 4 + 3] = 1.0
       
-      pointSizes[i] = (node.size || 8) * 4 // Even larger nodes
+      // Scale node size based on graph size
+      const baseSize = data.nodes.length > 5000000 ? 1 : data.nodes.length > 500000 ? 2 : data.nodes.length > 50000 ? 4 : 8
+      const multiplier = data.nodes.length > 5000000 ? 0.5 : data.nodes.length > 500000 ? 1 : 2
+      pointSizes[i] = (node.size || baseSize) * multiplier
     })
     
     console.log('Setting point positions for', data.nodes.length, 'points')
@@ -145,14 +167,16 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       graph.fitView()
     }, 100)
     
-    // Start simulation after rendering
-    if (enablePhysics) {
+    // Start simulation after rendering only if no static positions
+    if (enablePhysics && (!hasPositions || !useStaticLayout)) {
       console.log('Starting graph simulation')
       graph.start()
+    } else if (hasPositions && useStaticLayout) {
+      console.log('Using static layout, physics simulation disabled')
     }
     
     cosmosRef.current = graph
-  }, [enablePhysics])
+  }, [enablePhysics, useStaticLayout])
 
   const applyLevelOfDetail = useCallback((graph: SupplyChainGraphType, zoomLevel: number): SupplyChainGraphType => {
     if (!performanceMode) return graph
@@ -220,13 +244,25 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       setFullGraphData(rawGraph)
       setCurrentDataset(undefined) // Clear current dataset when generating new graph
       
-      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, selectedNodeTypes)
-      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, selectedTiers)
+      // Update available options based on actual data
+      const dataNodeTypes = [...new Set(rawGraph.nodes.map(n => n.type))] as NodeType[]
+      const dataTiers = [...new Set(rawGraph.nodes.map(n => n.tier))].sort((a, b) => a - b)
+      setAvailableNodeTypes(dataNodeTypes)
+      setAvailableTiers(dataTiers)
+      
+      // Adjust selected filters to only include available options
+      const validNodeTypes = selectedNodeTypes.filter(type => dataNodeTypes.includes(type))
+      const validTiers = selectedTiers.filter(tier => dataTiers.includes(tier))
+      setSelectedNodeTypes(validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      setSelectedTiers(validTiers.length > 0 ? validTiers : dataTiers)
+      
+      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, validTiers.length > 0 ? validTiers : dataTiers)
       
       const optimizedGraph = applyLevelOfDetail(filteredGraph, currentZoomLevel)
       setGraphData(optimizedGraph)
       
-      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph)
+      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
       
       await PerformanceUtils.measureAsyncPerformance(
         'Graph Rendering',
@@ -242,7 +278,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       console.error('Error generating graph:', error)
       setIsLoading(false)
     }
-  }, [nodeCount, selectedNodeTypes, selectedTiers, currentZoomLevel, performanceMode, applyLevelOfDetail, initializeCosmos])
+  }, [nodeCount, currentZoomLevel, performanceMode, applyLevelOfDetail, initializeCosmos, colorMode])
 
   const handleLoadSampleData = useCallback(async (filename: string) => {
     setIsLoading(true)
@@ -255,13 +291,25 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       setFullGraphData(rawGraph)
       setCurrentDataset(filename)
       
-      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, selectedNodeTypes)
-      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, selectedTiers)
+      // Update available options based on actual data
+      const dataNodeTypes = [...new Set(rawGraph.nodes.map(n => n.type))] as NodeType[]
+      const dataTiers = [...new Set(rawGraph.nodes.map(n => n.tier))].sort((a, b) => a - b)
+      setAvailableNodeTypes(dataNodeTypes)
+      setAvailableTiers(dataTiers)
+      
+      // Adjust selected filters to only include available options
+      const validNodeTypes = selectedNodeTypes.filter(type => dataNodeTypes.includes(type))
+      const validTiers = selectedTiers.filter(tier => dataTiers.includes(tier))
+      setSelectedNodeTypes(validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      setSelectedTiers(validTiers.length > 0 ? validTiers : dataTiers)
+      
+      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, validTiers.length > 0 ? validTiers : dataTiers)
       
       const optimizedGraph = applyLevelOfDetail(filteredGraph, currentZoomLevel)
       setGraphData(optimizedGraph)
       
-      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph)
+      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
       
       await PerformanceUtils.measureAsyncPerformance(
         'Graph Rendering',
@@ -277,7 +325,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       console.error('Error loading sample data:', error)
       setIsLoading(false)
     }
-  }, [selectedNodeTypes, selectedTiers, currentZoomLevel, applyLevelOfDetail, initializeCosmos])
+  }, [currentZoomLevel, applyLevelOfDetail, initializeCosmos, colorMode])
 
   const handleFilterChange = useCallback(async (nodeTypes: NodeType[], tiers: number[]) => {
     setSelectedNodeTypes(nodeTypes)
@@ -290,7 +338,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       const optimizedGraph = applyLevelOfDetail(filteredGraph, currentZoomLevel)
       setGraphData(optimizedGraph)
       
-      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph)
+      const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
       
       await PerformanceUtils.measureAsyncPerformance(
         'Filter Update',
@@ -300,7 +348,23 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
         }
       )
     }
-  }, [fullGraphData, currentZoomLevel, applyLevelOfDetail, initializeCosmos])
+  }, [fullGraphData, currentZoomLevel, applyLevelOfDetail, initializeCosmos, colorMode])
+
+  const handleColorModeChange = useCallback(async (newColorMode: ColorMode) => {
+    setColorMode(newColorMode)
+    
+    if (graphData) {
+      const cosmosData = GraphUtils.convertToCosmosFormat(graphData, newColorMode)
+      
+      await PerformanceUtils.measureAsyncPerformance(
+        'Color Mode Update',
+        async () => {
+          initializeCosmos(cosmosData)
+          await PerformanceUtils.nextFrame()
+        }
+      )
+    }
+  }, [graphData, initializeCosmos])
 
   const handlePhysicsToggle = useCallback(() => {
     if (cosmosRef.current) {
@@ -334,14 +398,51 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
   }, [])
 
   useEffect(() => {
-    generateGraph()
+    // Only generate on initial mount
+    const initialGenerate = async () => {
+      setIsLoading(true)
+      setRenderProgress(0)
+      try {
+        const rawGraph = SupplyChainGenerator.generateGraph(nodeCount, 'Electronics', 'Global')
+        setFullGraphData(rawGraph)
+        
+        const dataNodeTypes = [...new Set(rawGraph.nodes.map(n => n.type))] as NodeType[]
+        const dataTiers = [...new Set(rawGraph.nodes.map(n => n.tier))].sort((a, b) => a - b)
+        setAvailableNodeTypes(dataNodeTypes)
+        setAvailableTiers(dataTiers)
+        setSelectedNodeTypes(dataNodeTypes)
+        setSelectedTiers(dataTiers)
+        
+        const optimizedGraph = applyLevelOfDetail(rawGraph, currentZoomLevel)
+        setGraphData(optimizedGraph)
+        setCurrentDataset(undefined)
+        
+        const cosmosData = GraphUtils.convertToCosmosFormat(optimizedGraph, colorMode)
+        await PerformanceUtils.measureAsyncPerformance(
+          'Graph Rendering',
+          async () => {
+            initializeCosmos(cosmosData)
+            await PerformanceUtils.nextFrame()
+          }
+        )
+        
+        setRenderProgress(100)
+        setIsLoading(false)
+      } catch (error) {
+        console.error('Error generating initial graph:', error)
+        setIsLoading(false)
+      }
+    }
+    
+    initialGenerate()
     
     return () => {
       if (cosmosRef.current) {
         cosmosRef.current.destroy()
       }
     }
-  }, [generateGraph])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const handleResize = () => {
@@ -380,6 +481,10 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
         physicsEnabled={enablePhysics}
         onLoadSampleData={handleLoadSampleData}
         currentDataset={currentDataset}
+        availableNodeTypes={availableNodeTypes}
+        availableTiers={availableTiers}
+        colorMode={colorMode}
+        onColorModeChange={handleColorModeChange}
       />
       
       <div className="flex-1 relative">

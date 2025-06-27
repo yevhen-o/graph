@@ -1,4 +1,5 @@
 export enum NodeType {
+  RAW_MATERIALS = 'raw_materials',
   SUPPLIER = 'supplier',
   MANUFACTURER = 'manufacturer',
   DISTRIBUTOR = 'distributor',
@@ -19,6 +20,8 @@ export interface SupplyChainNode {
   label: string
   type: NodeType
   tier: number
+  x?: number  // Pre-calculated x position
+  y?: number  // Pre-calculated y position
   location?: {
     lat: number
     lng: number
@@ -29,7 +32,7 @@ export interface SupplyChainNode {
   leadTime?: number
   riskScore?: number
   sustainability?: number
-  size?: 'small' | 'medium' | 'large'
+  size?: 'small' | 'medium' | 'large' | number
   industry?: string
   established?: number
 }

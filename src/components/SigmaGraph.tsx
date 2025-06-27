@@ -4,29 +4,36 @@ import Graph from 'graphology'
 import { circular } from 'graphology-layout'
 import forceAtlas2 from 'graphology-layout-forceatlas2'
 import { SupplyChainGenerator } from '../data/supplyChainGenerator'
-import { GraphUtils } from '../utils/graphUtils'
+import { GraphUtils, ColorMode } from '../utils/graphUtils'
 import { SupplyChainGraph as SupplyChainGraphType, NodeType } from '../types/supplyChain'
 import GraphControls from './GraphControls'
 
 interface SigmaGraphProps {
   nodeCount?: number
   enablePhysics?: boolean
+  useStaticLayout?: boolean
 }
 
 const SigmaGraph: React.FC<SigmaGraphProps> = ({ 
   nodeCount = 50, 
-  enablePhysics = true 
+  enablePhysics = true,
+  useStaticLayout = true 
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const sigmaRef = useRef<Sigma | null>(null)
   const graphRef = useRef<Graph | null>(null)
   const [graphData, setGraphData] = useState<SupplyChainGraphType | null>(null)
+  const [fullGraphData, setFullGraphData] = useState<SupplyChainGraphType | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<NodeType[]>(Object.values(NodeType))
-  const [selectedTiers, setSelectedTiers] = useState<number[]>([1, 2, 3, 4, 5])
+  const [selectedTiers, setSelectedTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
   const [currentDataset, setCurrentDataset] = useState<string | undefined>(undefined)
+  const [availableNodeTypes, setAvailableNodeTypes] = useState<NodeType[]>(Object.values(NodeType))
+  const [availableTiers, setAvailableTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
+  const [, setHasPreCalculatedPositions] = useState(false)
+  const [colorMode, setColorMode] = useState<ColorMode>('nodeType')
 
-  const initializeSigma = useCallback((data: SupplyChainGraphType) => {
+  const initializeSigma = useCallback((data: SupplyChainGraphType, mode?: ColorMode) => {
     if (!containerRef.current) return
     
     // Clean up previous Sigma instance
@@ -41,19 +48,25 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     
     console.log('Initializing Sigma with', data.nodes.length, 'nodes and', data.edges.length, 'edges')
 
-    // Create a graphology graph
-    const graph = GraphUtils.createGraphologyGraph(data)
+    // Check if nodes have pre-calculated positions
+    const hasPositions = data.nodes.some(node => node.x !== undefined && node.y !== undefined)
+    setHasPreCalculatedPositions(hasPositions)
     
-    // Apply circular layout initially
-    circular.assign(graph)
+    // Create a graphology graph
+    const currentMode = mode || colorMode
+    const graph = GraphUtils.createGraphologyGraph(data, useStaticLayout, currentMode)
+    
+    // Only apply layout if no pre-calculated positions or if static layout is disabled
+    if (!hasPositions || !useStaticLayout) {
+      // Apply circular layout initially for better starting positions
+      circular.assign(graph)
+    }
     
     // Create Sigma instance
     const sigma = new Sigma(graph, containerRef.current, {
       renderEdgeLabels: false,
-      defaultNodeColor: '#69b3a2',
       defaultEdgeColor: '#ccc',
-      nodeProgramClasses: {},
-      edgeProgramClasses: {}
+      // Don't use nodeReducer - let Sigma use the graph attributes directly
     })
     
     console.log('Sigma instance created successfully')
@@ -62,8 +75,11 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     sigmaRef.current = sigma
     graphRef.current = graph
     
-    // Apply force layout if physics enabled
-    if (enablePhysics) {
+    // Force a refresh to ensure colors are applied
+    sigma.refresh()
+    
+    // Apply force layout if physics enabled AND no static positions
+    if (enablePhysics && (!hasPositions || !useStaticLayout)) {
       console.log('Starting ForceAtlas2 layout')
       forceAtlas2.assign(graph, {
         iterations: 50,
@@ -86,7 +102,7 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       console.log('Clicked node:', event.node)
     })
     
-  }, [enablePhysics])
+  }, [enablePhysics, useStaticLayout, colorMode])
 
   const generateGraph = useCallback(async () => {
     setIsLoading(true)
@@ -95,8 +111,22 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       console.log('Generating graph with', nodeCount, 'nodes')
       const rawGraph = SupplyChainGenerator.generateGraph(nodeCount, 'Electronics', 'Global')
       
-      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, selectedNodeTypes)
-      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, selectedTiers)
+      setFullGraphData(rawGraph)
+      
+      // Update available options based on actual data
+      const dataNodeTypes = [...new Set(rawGraph.nodes.map(n => n.type))] as NodeType[]
+      const dataTiers = [...new Set(rawGraph.nodes.map(n => n.tier))].sort((a, b) => a - b)
+      setAvailableNodeTypes(dataNodeTypes)
+      setAvailableTiers(dataTiers)
+      
+      // Adjust selected filters to only include available options
+      const validNodeTypes = selectedNodeTypes.filter(type => dataNodeTypes.includes(type))
+      const validTiers = selectedTiers.filter(tier => dataTiers.includes(tier))
+      setSelectedNodeTypes(validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      setSelectedTiers(validTiers.length > 0 ? validTiers : dataTiers)
+      
+      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, validTiers.length > 0 ? validTiers : dataTiers)
       
       setGraphData(filteredGraph)
       setCurrentDataset(undefined) // Clear current dataset when generating new graph
@@ -107,7 +137,7 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       console.error('Error generating graph:', error)
       setIsLoading(false)
     }
-  }, [nodeCount, selectedNodeTypes, selectedTiers, initializeSigma])
+  }, [nodeCount, initializeSigma])
 
   const handleLoadSampleData = useCallback(async (filename: string) => {
     setIsLoading(true)
@@ -116,8 +146,22 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       console.log('Loading sample data:', filename)
       const rawGraph = await SupplyChainGenerator.loadSampleData(filename)
       
-      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, selectedNodeTypes)
-      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, selectedTiers)
+      setFullGraphData(rawGraph)
+      
+      // Update available options based on actual data
+      const dataNodeTypes = [...new Set(rawGraph.nodes.map(n => n.type))] as NodeType[]
+      const dataTiers = [...new Set(rawGraph.nodes.map(n => n.tier))].sort((a, b) => a - b)
+      setAvailableNodeTypes(dataNodeTypes)
+      setAvailableTiers(dataTiers)
+      
+      // Adjust selected filters to only include available options
+      const validNodeTypes = selectedNodeTypes.filter(type => dataNodeTypes.includes(type))
+      const validTiers = selectedTiers.filter(tier => dataTiers.includes(tier))
+      setSelectedNodeTypes(validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      setSelectedTiers(validTiers.length > 0 ? validTiers : dataTiers)
+      
+      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
+      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, validTiers.length > 0 ? validTiers : dataTiers)
       
       setGraphData(filteredGraph)
       setCurrentDataset(filename)
@@ -128,19 +172,20 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       console.error('Error loading sample data:', error)
       setIsLoading(false)
     }
-  }, [selectedNodeTypes, selectedTiers, initializeSigma])
+  }, [initializeSigma])
 
   const handleFilterChange = useCallback(async (nodeTypes: NodeType[], tiers: number[]) => {
     setSelectedNodeTypes(nodeTypes)
     setSelectedTiers(tiers)
     
-    if (graphData) {
-      let filteredGraph = GraphUtils.filterGraphByNodeType(graphData, nodeTypes)
+    if (fullGraphData) {
+      let filteredGraph = GraphUtils.filterGraphByNodeType(fullGraphData, nodeTypes)
       filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, tiers)
       
+      setGraphData(filteredGraph)
       initializeSigma(filteredGraph)
     }
-  }, [graphData, initializeSigma])
+  }, [fullGraphData, initializeSigma])
 
   const handlePhysicsToggle = useCallback(() => {
     if (graphRef.current && sigmaRef.current) {
@@ -177,15 +222,48 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     }
   }, [])
 
+  const handleColorModeChange = useCallback(async (newColorMode: ColorMode) => {
+    setColorMode(newColorMode)
+    
+    if (graphData) {
+      initializeSigma(graphData, newColorMode)
+    }
+  }, [graphData, initializeSigma])
+
   useEffect(() => {
-    generateGraph()
+    // Only generate on initial mount
+    const initialGenerate = async () => {
+      setIsLoading(true)
+      try {
+        const rawGraph = SupplyChainGenerator.generateGraph(nodeCount, 'Electronics', 'Global')
+        setFullGraphData(rawGraph)
+        
+        const dataNodeTypes = [...new Set(rawGraph.nodes.map(n => n.type))] as NodeType[]
+        const dataTiers = [...new Set(rawGraph.nodes.map(n => n.tier))].sort((a, b) => a - b)
+        setAvailableNodeTypes(dataNodeTypes)
+        setAvailableTiers(dataTiers)
+        setSelectedNodeTypes(dataNodeTypes)
+        setSelectedTiers(dataTiers)
+        
+        setGraphData(rawGraph)
+        setCurrentDataset(undefined)
+        initializeSigma(rawGraph)
+        setIsLoading(false)
+      } catch (error) {
+        console.error('Error generating initial graph:', error)
+        setIsLoading(false)
+      }
+    }
+    
+    initialGenerate()
     
     return () => {
       if (sigmaRef.current) {
         sigmaRef.current.kill()
       }
     }
-  }, [generateGraph])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const handleResize = () => {
@@ -206,6 +284,8 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
         isLoading={isLoading}
         nodeCount={graphData?.metadata.totalNodes || 0}
         edgeCount={graphData?.metadata.totalEdges || 0}
+        fullNodeCount={fullGraphData?.metadata.totalNodes || 0}
+        fullEdgeCount={fullGraphData?.metadata.totalEdges || 0}
         selectedNodeTypes={selectedNodeTypes}
         selectedTiers={selectedTiers}
         onFilterChange={handleFilterChange}
@@ -216,6 +296,10 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
         physicsEnabled={enablePhysics}
         onLoadSampleData={handleLoadSampleData}
         currentDataset={currentDataset}
+        availableNodeTypes={availableNodeTypes}
+        availableTiers={availableTiers}
+        colorMode={colorMode}
+        onColorModeChange={handleColorModeChange}
       />
       
       <div className="flex-1 relative">

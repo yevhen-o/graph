@@ -135,6 +135,12 @@ export class SupplyChainGenerator {
       nodeCount: 2000000,
       industry: "Global Manufacturing",
     },
+    {
+      name: "Realistic Automotive Supply Chain",
+      filename: "sample_automotive_realistic.json",
+      nodeCount: 1373,
+      industry: "Automotive Manufacturing",
+    },
   ];
 
   static async loadSampleData(filename: string): Promise<SupplyChainGraph> {
