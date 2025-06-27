@@ -41,7 +41,8 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     setGraphData,
     setFullGraphData,
     setLoading,
-    crisis
+    crisis,
+    selectedItems
   } = useSelectionStore()
 
   const initializeSigma = useCallback((data: SupplyChainGraphType, mode?: ColorMode) => {
@@ -68,17 +69,66 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     const affectedNodes = crisis.crisisMode ? crisis.affectedNodes : undefined
     const graph = GraphUtils.createGraphologyGraph(data, useStaticLayout, currentMode, affectedNodes)
     
+    // Debug: Check what was actually added to the graph
+    console.log('📊 Created Graphology graph:')
+    console.log('  - Nodes:', graph.order)
+    console.log('  - Edges:', graph.size)
+    console.log('  - Edge list:', graph.edges().slice(0, 5)) // Show first 5 edges
+    
+    // Debug: Check edge attributes
+    if (graph.size > 0) {
+      const firstEdge = graph.edges()[0]
+      const edgeAttrs = graph.getEdgeAttributes(firstEdge)
+      console.log('  - First edge attributes:', edgeAttrs)
+      console.log('  - First edge source/target:', graph.source(firstEdge), '->', graph.target(firstEdge))
+    }
+    
     // Only apply layout if no pre-calculated positions or if static layout is disabled
     if (!hasPositions || !useStaticLayout) {
       // Apply circular layout initially for better starting positions
       circular.assign(graph)
     }
     
-    // Create Sigma instance
+    // Create Sigma instance with explicit edge events enabled
     const sigma = new Sigma(graph, containerRef.current, {
+      // Basic settings
       renderEdgeLabels: false,
-      defaultEdgeColor: '#ccc',
-      // Don't use nodeReducer - let Sigma use the graph attributes directly
+      allowInvalidContainer: false,
+      // Explicitly enable edge events  
+      enableEdgeEvents: true,
+      enableEdgeClickEvents: true,
+      enableEdgeHoverEvents: true,
+      enableEdgeWheelEvents: true,
+      // Node settings
+      defaultNodeColor: '#999',
+      // Edge settings - thin edges with larger hit area for clicking
+      defaultEdgeColor: '#666',
+      defaultEdgeThickness: 1, // Thin visual edges
+      // Increase hit area for edge interaction without making edges visually thick
+      edgeHitTestThreshold: 8, // Larger invisible hit area for clicking
+      // Custom reducers for interactive styling
+      nodeReducer: (node, data) => {
+        return {
+          ...data,
+          size: data.size || 8, // Ensure nodes have minimum size
+          color: data.color || '#999'
+        }
+      },
+      edgeReducer: (edge, data) => {
+        const state = useSelectionStore.getState()
+        const selectedEdges = state.getSelectedEdges()
+        const isSelected = selectedEdges.some(e => e.id === edge)
+        
+        return {
+          ...data,
+          // Very thin edges by default, thicker when selected
+          size: isSelected ? Math.max(4, data.size || 3) : Math.max(1, data.size || 1),
+          // Different colors for selected edges
+          color: isSelected ? '#e74c3c' : (data.color || '#666'),
+          // Ensure edges are always visible
+          hidden: false,
+        }
+      }
     })
     
     console.log('Sigma instance created successfully')
@@ -109,21 +159,76 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       sigma.refresh()
     }
     
-    // Add click handlers
+    // Add click handlers  
     sigma.on('clickNode', (event) => {
-      console.log('Clicked node:', event.node)
+      console.log('🔵 Node clicked:', event.node)
       const nodeData = data.nodes.find(n => n.id === event.node)
       if (nodeData) {
+        console.log('✅ Adding node to selection:', nodeData.label)
         addNode(nodeData)
       }
     })
     
+    // Also listen for general click events to debug
+    sigma.on('clickStage', (event) => {
+      console.log('🖱️ Stage clicked at:', event.event.x, event.event.y)
+    })
+    
+    // Try different edge event approach
+    sigma.on('enterEdge', (event) => {
+      console.log('🔗 Edge hover detected:', event.edge)
+    })
+    
     sigma.on('clickEdge', (event) => {
-      console.log('Clicked edge:', event.edge)
+      console.log('🔗 Edge clicked:', event.edge)
+      console.log('🔍 Looking for edge in data.edges array...')
+      
       const edgeData = data.edges.find(e => e.id === event.edge)
       if (edgeData) {
+        console.log('✅ Found original edge data:', edgeData)
+        console.log('📋 Adding edge to selection store...')
         addEdge(edgeData)
+        console.log('✅ Edge added to store')
+      } else {
+        console.log('❌ Original edge data not found, creating synthetic data...')
+        // Try to find edge by source-target if ID doesn't match
+        const graphEdge = graph.getEdgeAttributes(event.edge)
+        console.log('📊 Graph edge attributes:', graphEdge)
+        
+        // Create edge data from graph attributes if original edge data not found
+        const syntheticEdgeData = {
+          id: event.edge,
+          source: graph.source(event.edge),
+          target: graph.target(event.edge),
+          weight: graphEdge.weight || 1,
+          type: graphEdge.edgeType || 'MATERIAL_FLOW',
+          label: `${graph.source(event.edge)} → ${graph.target(event.edge)}`
+        }
+        console.log('🔧 Created synthetic edge data:', syntheticEdgeData)
+        console.log('📋 Adding synthetic edge to selection store...')
+        addEdge(syntheticEdgeData)
+        console.log('✅ Synthetic edge added to store')
       }
+      
+      // Log current selection state
+      const currentState = useSelectionStore.getState()
+      console.log('📊 Current selection state:', {
+        totalItems: currentState.selectedItems.length,
+        edges: currentState.selectedItems.filter(item => item.type === 'edge').length,
+        nodes: currentState.selectedItems.filter(item => item.type === 'node').length,
+        panelOpen: currentState.isPanelOpen
+      })
+    })
+
+    // Add edge hover effects for better interaction feedback
+    sigma.on('enterEdge', (event) => {
+      // Edge hover effect is handled by Sigma configuration
+      console.log('Hovering edge:', event.edge)
+    })
+
+    sigma.on('leaveEdge', (event) => {
+      // Edge hover effect removal is handled by Sigma configuration
+      console.log('Left edge:', event.edge)
     })
     
   }, [enablePhysics, useStaticLayout, colorMode, crisis])
@@ -310,6 +415,14 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     }
   }, [graphData, colorMode, initializeSigma])
 
+  // Effect to refresh visualization when selection changes
+  useEffect(() => {
+    if (sigmaRef.current) {
+      console.log('Selection changed, refreshing graph')
+      sigmaRef.current.refresh()
+    }
+  }, [selectedItems])
+
   return (
     <div className="w-full h-full flex">
       <GraphControls
@@ -347,6 +460,7 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
         <div
           ref={containerRef}
           className="w-full h-full graph-container bg-white"
+          data-testid="graph-container"
         />
       </div>
     </div>

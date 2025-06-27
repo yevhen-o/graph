@@ -13,7 +13,6 @@
     "test:ui": "playwright test --ui"
   },
   "dependencies": {
-    "@cosmos.gl/graph": "^2.3.0",
     "d3-color": "^3.1.0",
     "d3-scale": "^4.0.2",
     "graphology": "^0.25.4",

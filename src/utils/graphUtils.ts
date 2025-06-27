@@ -8,55 +8,10 @@ import {
 
 export type ColorMode = 'nodeType' | 'riskScore' | 'crisis';
 
-export interface CosmosNode {
-  id: string;
-  label?: string;
-  x?: number;
-  y?: number;
-  color?: string;
-  size?: number;
-  tier?: number;
-}
-
-export interface CosmosEdge {
-  source: string;
-  target: string;
-  weight?: number;
-  color?: string;
-}
-
-export interface CosmosGraphData {
-  nodes: CosmosNode[];
-  links: CosmosEdge[];
-}
+// Cosmos interfaces removed - using Sigma.js only
 
 export class GraphUtils {
-  static convertToCosmosFormat(
-    graph: SupplyChainGraph, 
-    colorMode: ColorMode = 'nodeType',
-    affectedNodes?: Set<string>
-  ): CosmosGraphData {
-    // Note: nodeColorScale removed as it's not used in crisis mode
-
-    const nodes: CosmosNode[] = graph.nodes.map((node) => ({
-      id: node.id,
-      label: node.label,
-      x: node.x,
-      y: node.y,
-      color: this.getNodeColor(node, colorMode, affectedNodes),
-      size: this.getNodeSize(node),
-      tier: node.tier,
-    }));
-
-    const links: CosmosEdge[] = graph.edges.map((edge) => ({
-      source: edge.source,
-      target: edge.target,
-      weight: edge.weight,
-      color: this.getEdgeColor(edge.type),
-    }));
-
-    return { nodes, links };
-  }
+  // Cosmos format conversion removed - using Sigma.js/Graphology only
 
   static createGraphologyGraph(
     graph: SupplyChainGraph,
@@ -93,28 +48,25 @@ export class GraphUtils {
       g.addNode(node.id, nodeAttributes);
     });
 
-    // Track added edges to prevent duplicates
-    const addedEdges = new Set<string>();
-
     graph.edges.forEach((edge) => {
       if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
-        // Create a unique key for this edge (considering direction)
-        const edgeKey = `${edge.source}->${edge.target}`;
-
-        // Only add if this edge doesn't already exist
-        if (!addedEdges.has(edgeKey) && !g.hasEdge(edge.source, edge.target)) {
-          try {
-            g.addEdge(edge.source, edge.target, {
-              weight: edge.weight,
-              // Store edge type as edgeType to avoid conflicts
-              edgeType: edge.type,
-              color: this.getEdgeColor(edge.type),
-            });
-            addedEdges.add(edgeKey);
-          } catch (error) {
-            // Skip duplicate edges silently
-            console.warn(`Skipped duplicate edge: ${edgeKey}`);
-          }
+        // Check if edge between these nodes already exists (allow multiple edges)
+        try {
+          // Add edge with standard (source, target, attributes) signature
+          g.addEdge(edge.source, edge.target, {
+            weight: edge.weight,
+            // Store edge type as edgeType to avoid conflicts
+            edgeType: edge.type,
+            color: this.getEdgeColor(edge.type),
+            // Thin edge attributes by default
+            size: Math.max(1, Math.min(edge.weight / 40, 2)), // Thinner edges based on weight
+            type: 'line', // Explicit edge type
+            originalId: edge.id, // Store original edge ID for reference
+            id: edge.id, // Store in attributes for click handling
+          });
+        } catch (error) {
+          // Log error but continue processing other edges
+          console.warn(`Failed to add edge ${edge.id} (${edge.source} -> ${edge.target}):`, error);
         }
       }
     });
@@ -232,13 +184,14 @@ export class GraphUtils {
   }
 
   private static getEdgeColor(type: EdgeType): string {
+    // Enhanced edge colors for better visibility and distinction
     const colors = {
-      [EdgeType.MATERIAL_FLOW]: "#2ecc71",
-      [EdgeType.INFORMATION_FLOW]: "#3498db",
-      [EdgeType.FINANCIAL_FLOW]: "#f39c12",
-      [EdgeType.TRANSPORTATION]: "#9b59b6",
+      [EdgeType.MATERIAL_FLOW]: "#27ae60",      // Stronger green for material flow
+      [EdgeType.INFORMATION_FLOW]: "#2980b9",   // Stronger blue for information
+      [EdgeType.FINANCIAL_FLOW]: "#e67e22",     // Stronger orange for financial
+      [EdgeType.TRANSPORTATION]: "#8e44ad",     // Stronger purple for transportation
     };
-    return colors[type] || "#95a5a6";
+    return colors[type] || "#7f8c8d"; // Stronger default gray
   }
 
   static calculateGraphMetrics(graph: Graph) {
