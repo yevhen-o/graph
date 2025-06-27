@@ -19,6 +19,12 @@ export interface TraceOptions {
   weightThreshold?: number
 }
 
+export interface PathFindingOptions {
+  isDirectional?: boolean // If false, treat graph as undirected
+  maxDepth?: number // Maximum path length to prevent infinite loops
+  maxPaths?: number // Maximum number of paths to find
+}
+
 export class PathTracer {
   private graph: SupplyChainGraph
   private adjacencyMap: Map<string, string[]> = new Map()
@@ -224,40 +230,125 @@ export class PathTracer {
   /**
    * Find critical paths between two specific nodes
    */
-  findPathsBetween(sourceId: string, targetId: string): string[][] {
-    const paths: string[][] = []
-    const visited = new Set<string>()
+  findPathsBetween(sourceId: string, targetId: string, options: PathFindingOptions = {}): string[][] {
+    const { 
+      isDirectional = true, 
+      maxDepth = 8, // Reasonable limit to prevent infinite loops
+      maxPaths = 20 // Limit number of paths for performance
+    } = options
+    
+    const allPaths: string[][] = []
+    const pathSet = new Set<string>() // For efficient duplicate detection
 
-    const dfs = (currentId: string, currentPath: string[]) => {
+    // Helper function to add unique paths
+    const addPath = (path: string[]) => {
+      if (allPaths.length >= maxPaths) return false
+      const pathKey = path.join('->')
+      if (!pathSet.has(pathKey)) {
+        pathSet.add(pathKey)
+        allPaths.push([...path])
+      }
+      return allPaths.length < maxPaths
+    }
+
+    if (!isDirectional) {
+      // Undirected mode: find paths considering both edge directions
+      this.findUndirectedPaths(sourceId, targetId, maxDepth, addPath)
+    } else {
+      // Directional mode - only find paths from source to target
+      this.findDirectionalPathsWithLimit(sourceId, targetId, maxDepth, addPath)
+    }
+
+    return allPaths
+  }
+
+  private findDirectionalPathsWithLimit(
+    sourceId: string, 
+    targetId: string, 
+    maxDepth: number, 
+    addPath: (path: string[]) => boolean
+  ): void {
+    const visited = new Set<string>()
+    
+    const dfs = (currentId: string, currentPath: string[], depth: number): boolean => {
       if (currentId === targetId) {
-        paths.push([...currentPath])
-        return
+        return addPath([...currentPath])
       }
 
-      if (visited.has(currentId)) return
+      if (depth >= maxDepth || visited.has(currentId)) return true
       visited.add(currentId)
 
       const downstreamNodes = this.adjacencyMap.get(currentId) || []
-      downstreamNodes.forEach(nextId => {
-        dfs(nextId, [...currentPath, nextId])
-      })
+      for (const nextId of downstreamNodes) {
+        const shouldContinue = dfs(nextId, [...currentPath, nextId], depth + 1)
+        if (!shouldContinue) break // Stop if max paths reached
+      }
 
       visited.delete(currentId)
+      return true
     }
 
-    dfs(sourceId, [sourceId])
-    return paths
+    dfs(sourceId, [sourceId], 0)
+  }
+
+  private findUndirectedPaths(
+    sourceId: string, 
+    targetId: string, 
+    maxDepth: number, 
+    addPath: (path: string[]) => boolean
+  ): void {
+    const visited = new Set<string>()
+    
+    const dfs = (currentId: string, currentPath: string[], depth: number): boolean => {
+      if (currentId === targetId) {
+        return addPath([...currentPath])
+      }
+
+      if (depth >= maxDepth || visited.has(currentId)) return true
+      visited.add(currentId)
+
+      // In undirected mode, consider both forward and reverse edges
+      const neighbors = new Set<string>()
+      
+      // Add forward neighbors
+      const forwardNeighbors = this.adjacencyMap.get(currentId) || []
+      forwardNeighbors.forEach(neighbor => neighbors.add(neighbor))
+      
+      // Add reverse neighbors (treat edges as undirected)
+      const reverseNeighbors = this.reverseAdjacencyMap.get(currentId) || []
+      reverseNeighbors.forEach(neighbor => neighbors.add(neighbor))
+
+      for (const nextId of neighbors) {
+        const shouldContinue = dfs(nextId, [...currentPath, nextId], depth + 1)
+        if (!shouldContinue) break // Stop if max paths reached
+      }
+
+      visited.delete(currentId)
+      return true
+    }
+
+    dfs(sourceId, [sourceId], 0)
+  }
+
+  // Keep the old method for backward compatibility
+  private findDirectionalPaths(sourceId: string, targetId: string, paths: string[][], visited: Set<string>): void {
+    const addPath = (path: string[]) => {
+      paths.push([...path])
+      return true
+    }
+    this.findDirectionalPathsWithLimit(sourceId, targetId, 8, addPath)
   }
 
   /**
    * Find shortest path between two nodes using Dijkstra's algorithm
    * Returns the optimal path considering edge weights
    */
-  findShortestPath(sourceId: string, targetId: string): {
+  findShortestPath(sourceId: string, targetId: string, options: PathFindingOptions = {}): {
     path: string[]
     totalWeight: number
     edges: string[]
   } | null {
+    const { isDirectional = true } = options
     // Priority queue implementation using array (for simplicity)
     interface QueueItem {
       nodeId: string
@@ -303,10 +394,26 @@ export class PathTracer {
 
       // Check all neighbors
       const neighbors = this.adjacencyMap.get(current.nodeId) || []
+      
+      // In undirected mode, also check reverse adjacency
+      if (!isDirectional) {
+        const reverseNeighbors = this.reverseAdjacencyMap.get(current.nodeId) || []
+        reverseNeighbors.forEach(neighborId => {
+          if (!neighbors.includes(neighborId)) {
+            neighbors.push(neighborId)
+          }
+        })
+      }
+      
       neighbors.forEach(neighborId => {
         if (visited.has(neighborId)) return
 
-        const edge = this.edgeMap.get(`${current.nodeId}->${neighborId}`)
+        // Find the edge (check both directions in undirected mode)
+        let edge = this.edgeMap.get(`${current.nodeId}->${neighborId}`)
+        if (!edge && !isDirectional) {
+          edge = this.edgeMap.get(`${neighborId}->${current.nodeId}`)
+        }
+        
         const edgeWeight = edge?.weight || 1
         const newDistance = current.distance + edgeWeight
 
@@ -331,11 +438,12 @@ export class PathTracer {
    * Find multiple alternative paths between two nodes
    * Returns up to maxPaths different routes
    */
-  findAlternativePaths(sourceId: string, targetId: string, maxPaths: number = 3): Array<{
+  findAlternativePaths(sourceId: string, targetId: string, maxPaths: number = 3, options: PathFindingOptions = {}): Array<{
     path: string[]
     totalWeight: number
     edges: string[]
   }> {
+    const { isDirectional = true } = options
     const allPaths: Array<{
       path: string[]
       totalWeight: number

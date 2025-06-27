@@ -26,6 +26,8 @@ export interface PathHighlight {
     totalWeight: number
     riskScore: number
   } | null
+  // Path finding mode
+  isDirectional: boolean // true = A→B only, false = A→B or B→A
 }
 
 export interface CrisisState {
@@ -83,6 +85,7 @@ export interface SelectionActions {
   // Path highlighting actions
   findPathsBetweenSelected: () => void
   clearPathHighlight: () => void
+  togglePathDirectionMode: () => void
   isNodeInPath: (nodeId: string) => boolean
   isEdgeInPath: (edgeId: string) => boolean
   isNodeInShortestPath: (nodeId: string) => boolean

@@ -14,7 +14,8 @@ const DetailPanel: React.FC = () => {
     clearAll,
     pathHighlight,
     findPathsBetweenSelected,
-    clearPathHighlight
+    clearPathHighlight,
+    togglePathDirectionMode
   } = useSelectionStore()
 
   const nodeCount = selectedItems.filter(item => item.type === 'node').length
@@ -102,13 +103,48 @@ const DetailPanel: React.FC = () => {
                         <div>• Total nodes: {pathHighlight.allPathNodes.size}</div>
                         <div>• Total edges: {pathHighlight.allPathEdges.size}</div>
                       </div>
+                      <div className="mt-3 flex items-center space-x-2">
+                        <button
+                          onClick={togglePathDirectionMode}
+                          className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                          title={`Currently ${pathHighlight.isDirectional ? 'directional' : 'undirectional'} mode`}
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            {pathHighlight.isDirectional ? (
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l4 4m0 0l-4 4m4-4H3" />
+                            ) : (
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                            )}
+                          </svg>
+                          <span>{pathHighlight.isDirectional ? 'Directional' : 'Undirectional'}</span>
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex items-center space-x-2">
-                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      <span className="text-sm font-medium text-blue-900">Find Path Between Nodes</span>
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span className="text-sm font-medium text-blue-900">Find Path Between Nodes</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <label className="text-xs text-blue-700">Mode:</label>
+                        <button
+                          onClick={togglePathDirectionMode}
+                          className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                          title="Toggle between directional and undirectional path finding"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            {pathHighlight.isDirectional ? (
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l4 4m0 0l-4 4m4-4H3" />
+                            ) : (
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                            )}
+                          </svg>
+                          <span>{pathHighlight.isDirectional ? 'Directional' : 'Undirectional'}</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

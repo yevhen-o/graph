@@ -36,7 +36,8 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
     allPathNodes: new Set(),
     allPathEdges: new Set(),
     paths: [],
-    pathMetrics: null
+    pathMetrics: null,
+    isDirectional: true // Default to directional mode
   },
 
   // Actions
@@ -213,7 +214,8 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
           allPathNodes: new Set(),
           allPathEdges: new Set(),
           paths: [],
-          pathMetrics: null
+          pathMetrics: null,
+          isDirectional: state.pathHighlight.isDirectional // Preserve directional mode
         }
       }
     })
@@ -430,99 +432,125 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
     }
 
     const [sourceNode, targetNode] = selectedNodes
-    const pathTracer = new PathTracer(state.graphData)
+    console.log(`Starting path finding between ${sourceNode.label} and ${targetNode.label}...`)
     
-    // Use optimized shortest path algorithm
-    const shortestPathResult = pathTracer.findShortestPath(sourceNode.id, targetNode.id)
-    
-    if (!shortestPathResult) {
-      console.log('No path found between', sourceNode.label, 'and', targetNode.label)
-      return
-    }
+    // Timeout wrapper for safety
+    const timeoutId = setTimeout(() => {
+      console.warn('Path finding taking too long, may have encountered infinite loop')
+    }, 5000) // 5 second warning
 
-    const { path: shortestPath, totalWeight, edges: shortestPathEdgeIds } = shortestPathResult
-
-    // Get ALL possible paths using DFS (limit to reasonable number for performance)
-    const allPossiblePaths = pathTracer.findPathsBetween(sourceNode.id, targetNode.id)
-      .slice(0, 10) // Limit to first 10 paths for performance
-    
-    console.log(`Found ${allPossiblePaths.length} possible paths between ${sourceNode.label} and ${targetNode.label}`)
-
-    // Shortest path nodes and edges (golden highlighting)
-    const shortestPathNodes = new Set(shortestPath)
-    const shortestPathEdges = new Set(shortestPathEdgeIds)
-    
-    // All path nodes and edges (red/selected highlighting)
-    const allPathNodes = new Set<string>()
-    const allPathEdges = new Set<string>()
-    
-    // Process all paths to collect nodes and edges
-    allPossiblePaths.forEach(path => {
-      // Add all nodes in this path
-      path.forEach(nodeId => allPathNodes.add(nodeId))
+    try {
+      const pathTracer = new PathTracer(state.graphData)
+      const pathOptions = { 
+        isDirectional: state.pathHighlight.isDirectional,
+        maxDepth: 8, // Prevent infinite loops
+        maxPaths: 15 // Limit paths for performance
+      }
       
-      // Add all edges in this path
-      for (let i = 0; i < path.length - 1; i++) {
-        const source = path[i]
-        const target = path[i + 1]
-        
-        // Find the edge between these nodes
-        const edge = state.graphData!.edges.find(e => 
-          e.source === source && e.target === target
-        )
-        
-        if (edge) {
-          allPathEdges.add(edge.id)
-        }
+      // Use optimized shortest path algorithm
+      const shortestPathResult = pathTracer.findShortestPath(sourceNode.id, targetNode.id, pathOptions)
+      
+      if (!shortestPathResult) {
+        console.log('No path found between', sourceNode.label, 'and', targetNode.label)
+        clearTimeout(timeoutId)
+        return
       }
-    })
-    
-    // Calculate average risk score of shortest path nodes
-    let totalRisk = 0
-    shortestPath.forEach(nodeId => {
-      const node = state.graphData!.nodes.find(n => n.id === nodeId)
-      if (node) {
-        totalRisk += node.riskScore || 0
-      }
-    })
-    
-    const avgRisk = totalRisk / shortestPath.length
 
-    console.log('Paths found:', {
-      from: sourceNode.label,
-      to: targetNode.label,
-      shortestPath: {
-        hops: shortestPath.length - 1,
-        weight: totalWeight,
-        risk: avgRisk,
-        path: shortestPath
-      },
-      totalPaths: allPossiblePaths.length,
-      allPathNodesCount: allPathNodes.size,
-      allPathEdgesCount: allPathEdges.size
-    })
+      const { path: shortestPath, totalWeight, edges: shortestPathEdgeIds } = shortestPathResult
 
-    set({
-      pathHighlight: {
-        isActive: true,
-        sourceNodeId: sourceNode.id,
-        targetNodeId: targetNode.id,
-        shortestPathNodes,
-        shortestPathEdges,
-        allPathNodes,
-        allPathEdges,
-        paths: allPossiblePaths,
-        pathMetrics: {
-          distance: shortestPath.length - 1,
-          totalWeight,
-          riskScore: avgRisk
+      // Get ALL possible paths using DFS (with built-in limits for performance)
+      const allPossiblePaths = pathTracer.findPathsBetween(sourceNode.id, targetNode.id, pathOptions)
+      
+      console.log(`Found ${allPossiblePaths.length} possible paths between ${sourceNode.label} and ${targetNode.label} (${pathOptions.isDirectional ? 'directional' : 'undirectional'} mode)`)
+
+      // Shortest path nodes and edges (golden highlighting)
+      const shortestPathNodes = new Set(shortestPath)
+      const shortestPathEdges = new Set(shortestPathEdgeIds)
+      
+      
+      // All path nodes and edges (red/selected highlighting)
+      const allPathNodes = new Set<string>()
+      const allPathEdges = new Set<string>()
+      
+      // Process all paths to collect nodes and edges
+      allPossiblePaths.forEach(path => {
+        // Add all nodes in this path
+        path.forEach(nodeId => allPathNodes.add(nodeId))
+        
+        // Add all edges in this path
+        for (let i = 0; i < path.length - 1; i++) {
+          const source = path[i]
+          const target = path[i + 1]
+          
+          // Find the edge between these nodes (check both directions for undirected graphs)
+          const edge = state.graphData!.edges.find(e => 
+            (e.source === source && e.target === target) ||
+            (e.source === target && e.target === source)
+          )
+          
+          if (edge) {
+            allPathEdges.add(edge.id)
+          }
         }
-      }
-    })
+      })
+      
+      // Calculate average risk score of shortest path nodes
+      let totalRisk = 0
+      shortestPath.forEach(nodeId => {
+        const node = state.graphData!.nodes.find(n => n.id === nodeId)
+        if (node) {
+          totalRisk += node.riskScore || 0
+        }
+      })
+      
+      const avgRisk = totalRisk / shortestPath.length
+
+      console.log('Paths found:', {
+        from: sourceNode.label,
+        to: targetNode.label,
+        shortestPath: {
+          hops: shortestPath.length - 1,
+          weight: totalWeight,
+          risk: avgRisk,
+          path: shortestPath
+        },
+        totalPaths: allPossiblePaths.length,
+        allPathNodesCount: allPathNodes.size,
+        allPathEdgesCount: allPathEdges.size,
+        shortestPathEdges: Array.from(shortestPathEdges),
+        allPathEdges: Array.from(allPathEdges).slice(0, 10) // Show first 10 for debugging
+      })
+
+
+      set({
+        pathHighlight: {
+          isActive: true,
+          sourceNodeId: sourceNode.id,
+          targetNodeId: targetNode.id,
+          shortestPathNodes,
+          shortestPathEdges,
+          allPathNodes,
+          allPathEdges,
+          paths: allPossiblePaths,
+          pathMetrics: {
+            distance: shortestPath.length - 1,
+            totalWeight,
+            riskScore: avgRisk
+          },
+          isDirectional: state.pathHighlight.isDirectional
+        }
+      })
+      
+      console.log(`Path finding completed successfully`)
+    } catch (error) {
+      console.error('Error during path finding:', error)
+    } finally {
+      clearTimeout(timeoutId)
+    }
   },
 
   clearPathHighlight: () => {
-    set({
+    set((state) => ({
       pathHighlight: {
         isActive: false,
         sourceNodeId: null,
@@ -532,7 +560,40 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
         allPathNodes: new Set(),
         allPathEdges: new Set(),
         paths: [],
-        pathMetrics: null
+        pathMetrics: null,
+        isDirectional: state.pathHighlight.isDirectional // Preserve directional mode
+      }
+    }))
+  },
+
+  togglePathDirectionMode: () => {
+    set((state) => {
+      const newMode = !state.pathHighlight.isDirectional
+      console.log(`Path direction mode: ${newMode ? 'Directional' : 'Undirectional'}`)
+      
+      // If path highlighting is active, recalculate with new mode
+      if (state.pathHighlight.isActive) {
+        // Temporarily store current state
+        const currentState = { ...state.pathHighlight, isDirectional: newMode }
+        
+        // Clear and recalculate
+        setTimeout(() => {
+          const store = get()
+          if (store.getSelectedNodes().length === 2) {
+            store.findPathsBetweenSelected()
+          }
+        }, 0)
+        
+        return {
+          pathHighlight: currentState
+        }
+      }
+      
+      return {
+        pathHighlight: {
+          ...state.pathHighlight,
+          isDirectional: newMode
+        }
       }
     })
   },

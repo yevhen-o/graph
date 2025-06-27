@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test.describe('All Paths Highlighting Feature', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('http://localhost:5177') // Use the correct port
+    await page.goto('http://localhost:5173')
     await page.waitForSelector('[data-testid="graph-container"]', { timeout: 15000 })
     await page.waitForTimeout(3000) // Wait for Sigma to fully render
   })
