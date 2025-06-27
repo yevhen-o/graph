@@ -31,8 +31,10 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
     isActive: false,
     sourceNodeId: null,
     targetNodeId: null,
-    pathNodes: new Set(),
-    pathEdges: new Set(),
+    shortestPathNodes: new Set(),
+    shortestPathEdges: new Set(),
+    allPathNodes: new Set(),
+    allPathEdges: new Set(),
     paths: [],
     pathMetrics: null
   },
@@ -206,8 +208,10 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
           isActive: false,
           sourceNodeId: null,
           targetNodeId: null,
-          pathNodes: new Set(),
-          pathEdges: new Set(),
+          shortestPathNodes: new Set(),
+          shortestPathEdges: new Set(),
+          allPathNodes: new Set(),
+          allPathEdges: new Set(),
           paths: [],
           pathMetrics: null
         }
@@ -436,13 +440,44 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
       return
     }
 
-    const { path: shortestPath, totalWeight, edges: pathEdgeIds } = shortestPathResult
+    const { path: shortestPath, totalWeight, edges: shortestPathEdgeIds } = shortestPathResult
 
-    // Collect all nodes and edges in the path
-    const pathNodes = new Set(shortestPath)
-    const pathEdges = new Set(pathEdgeIds)
+    // Get ALL possible paths using DFS (limit to reasonable number for performance)
+    const allPossiblePaths = pathTracer.findPathsBetween(sourceNode.id, targetNode.id)
+      .slice(0, 10) // Limit to first 10 paths for performance
     
-    // Calculate average risk score of path nodes
+    console.log(`Found ${allPossiblePaths.length} possible paths between ${sourceNode.label} and ${targetNode.label}`)
+
+    // Shortest path nodes and edges (golden highlighting)
+    const shortestPathNodes = new Set(shortestPath)
+    const shortestPathEdges = new Set(shortestPathEdgeIds)
+    
+    // All path nodes and edges (red/selected highlighting)
+    const allPathNodes = new Set<string>()
+    const allPathEdges = new Set<string>()
+    
+    // Process all paths to collect nodes and edges
+    allPossiblePaths.forEach(path => {
+      // Add all nodes in this path
+      path.forEach(nodeId => allPathNodes.add(nodeId))
+      
+      // Add all edges in this path
+      for (let i = 0; i < path.length - 1; i++) {
+        const source = path[i]
+        const target = path[i + 1]
+        
+        // Find the edge between these nodes
+        const edge = state.graphData!.edges.find(e => 
+          e.source === source && e.target === target
+        )
+        
+        if (edge) {
+          allPathEdges.add(edge.id)
+        }
+      }
+    })
+    
+    // Calculate average risk score of shortest path nodes
     let totalRisk = 0
     shortestPath.forEach(nodeId => {
       const node = state.graphData!.nodes.find(n => n.id === nodeId)
@@ -453,17 +488,18 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
     
     const avgRisk = totalRisk / shortestPath.length
 
-    // Also get alternative paths for advanced users
-    const alternativePaths = pathTracer.findAlternativePaths(sourceNode.id, targetNode.id, 3)
-    const allPaths = alternativePaths.map(p => p.path)
-
-    console.log('Path found:', {
+    console.log('Paths found:', {
       from: sourceNode.label,
       to: targetNode.label,
-      hops: shortestPath.length - 1,
-      weight: totalWeight,
-      risk: avgRisk,
-      path: shortestPath
+      shortestPath: {
+        hops: shortestPath.length - 1,
+        weight: totalWeight,
+        risk: avgRisk,
+        path: shortestPath
+      },
+      totalPaths: allPossiblePaths.length,
+      allPathNodesCount: allPathNodes.size,
+      allPathEdgesCount: allPathEdges.size
     })
 
     set({
@@ -471,9 +507,11 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
         isActive: true,
         sourceNodeId: sourceNode.id,
         targetNodeId: targetNode.id,
-        pathNodes,
-        pathEdges,
-        paths: allPaths,
+        shortestPathNodes,
+        shortestPathEdges,
+        allPathNodes,
+        allPathEdges,
+        paths: allPossiblePaths,
         pathMetrics: {
           distance: shortestPath.length - 1,
           totalWeight,
@@ -489,8 +527,10 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
         isActive: false,
         sourceNodeId: null,
         targetNodeId: null,
-        pathNodes: new Set(),
-        pathEdges: new Set(),
+        shortestPathNodes: new Set(),
+        shortestPathEdges: new Set(),
+        allPathNodes: new Set(),
+        allPathEdges: new Set(),
         paths: [],
         pathMetrics: null
       }
@@ -498,11 +538,23 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
   },
 
   isNodeInPath: (nodeId: string) => {
-    return get().pathHighlight.pathNodes.has(nodeId)
+    const pathHighlight = get().pathHighlight
+    return pathHighlight.allPathNodes.has(nodeId)
   },
 
   isEdgeInPath: (edgeId: string) => {
-    return get().pathHighlight.pathEdges.has(edgeId)
+    const pathHighlight = get().pathHighlight
+    return pathHighlight.allPathEdges.has(edgeId)
+  },
+
+  isNodeInShortestPath: (nodeId: string) => {
+    const pathHighlight = get().pathHighlight
+    return pathHighlight.shortestPathNodes.has(nodeId)
+  },
+
+  isEdgeInShortestPath: (edgeId: string) => {
+    const pathHighlight = get().pathHighlight
+    return pathHighlight.shortestPathEdges.has(edgeId)
   },
 
   getPathHighlight: () => {

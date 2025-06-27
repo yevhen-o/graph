@@ -14,8 +14,12 @@ export interface PathHighlight {
   isActive: boolean
   sourceNodeId: string | null
   targetNodeId: string | null
-  pathNodes: Set<string>
-  pathEdges: Set<string>
+  // Shortest path (golden highlighting)
+  shortestPathNodes: Set<string>
+  shortestPathEdges: Set<string>
+  // All paths (red/selected highlighting)
+  allPathNodes: Set<string>
+  allPathEdges: Set<string>
   paths: string[][] // Multiple paths if available
   pathMetrics: {
     distance: number
@@ -81,6 +85,8 @@ export interface SelectionActions {
   clearPathHighlight: () => void
   isNodeInPath: (nodeId: string) => boolean
   isEdgeInPath: (edgeId: string) => boolean
+  isNodeInShortestPath: (nodeId: string) => boolean
+  isEdgeInShortestPath: (edgeId: string) => boolean
   getPathHighlight: () => PathHighlight
 }
 

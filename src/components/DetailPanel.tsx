@@ -92,10 +92,15 @@ const DetailPanel: React.FC = () => {
                         <div className="w-3 h-3 bg-yellow-400 rounded-full animate-pulse"></div>
                         <span className="text-sm font-medium text-blue-900">Path Found</span>
                       </div>
-                      <div className="text-xs text-blue-700">
-                        <div>Distance: {pathHighlight.pathMetrics?.distance} hops</div>
-                        <div>Weight: {pathHighlight.pathMetrics?.totalWeight.toFixed(1)}</div>
-                        <div>Risk Score: {pathHighlight.pathMetrics?.riskScore.toFixed(2)}</div>
+                      <div className="text-xs text-blue-700 space-y-1">
+                        <div className="font-semibold">Shortest Path (Golden):</div>
+                        <div>• Distance: {pathHighlight.pathMetrics?.distance} hops</div>
+                        <div>• Weight: {pathHighlight.pathMetrics?.totalWeight.toFixed(1)}</div>
+                        <div>• Risk Score: {pathHighlight.pathMetrics?.riskScore.toFixed(2)}</div>
+                        <div className="font-semibold mt-2">All Paths (Red):</div>
+                        <div>• Total paths: {pathHighlight.paths.length}</div>
+                        <div>• Total nodes: {pathHighlight.allPathNodes.size}</div>
+                        <div>• Total edges: {pathHighlight.allPathEdges.size}</div>
                       </div>
                     </div>
                   ) : (
@@ -145,16 +150,15 @@ const DetailPanel: React.FC = () => {
             <div className="p-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
               <div className="flex items-center justify-between text-xs text-gray-500">
                 {pathHighlight.isActive ? (
-                  <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-3 text-xs">
                     <span className="flex items-center space-x-1">
                       <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
-                      <span>Golden path highlights shortest route</span>
+                      <span>Golden = Shortest path</span>
                     </span>
-                    {pathHighlight.paths.length > 1 && (
-                      <span className="text-blue-600">
-                        {pathHighlight.paths.length} alternative paths available
-                      </span>
-                    )}
+                    <span className="flex items-center space-x-1">
+                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                      <span>Red = All {pathHighlight.paths.length} possible paths</span>
+                    </span>
                   </div>
                 ) : (
                   <span>Click items to expand details</span>

@@ -106,30 +106,42 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
         const state = useSelectionStore.getState()
         const selectedNodes = state.getSelectedNodes()
         const isSelected = selectedNodes.some(n => n.id === node)
-        const isInPath = state.isNodeInPath(node)
+        const isInAllPaths = state.isNodeInPath(node)
+        const isInShortestPath = state.isNodeInShortestPath(node)
         const pathHighlight = state.getPathHighlight()
         
-        // Determine node styling based on state
+        // Determine node styling based on state priority:
+        // 1. Shortest path (golden) - highest priority
+        // 2. All paths (red/selected style) 
+        // 3. Selected nodes (red)
+        // 4. Default styling
+        
         let nodeColor = data.color || '#999'
         let nodeSize = data.size || 8
         let borderColor = undefined
         let borderWidth = 0
         
-        if (isInPath && pathHighlight.isActive) {
-          // Golden border for path nodes
-          borderColor = '#ffd700' // Gold
-          borderWidth = 3
-          
-          // Make start and end nodes larger and more prominent
-          if (node === pathHighlight.sourceNodeId || node === pathHighlight.targetNodeId) {
-            nodeSize = Math.max(nodeSize * 1.5, 12)
-            borderWidth = 4
-            borderColor = '#ff8c00' // Dark orange for endpoints
+        if (pathHighlight.isActive) {
+          if (isInShortestPath) {
+            // Golden border for shortest path nodes
+            borderColor = '#ffd700' // Gold
+            borderWidth = 3
+            
+            // Make start and end nodes larger and more prominent
+            if (node === pathHighlight.sourceNodeId || node === pathHighlight.targetNodeId) {
+              nodeSize = Math.max(nodeSize * 1.5, 12)
+              borderWidth = 4
+              borderColor = '#ff8c00' // Dark orange for endpoints
+            }
+          } else if (isInAllPaths) {
+            // Red border for alternative path nodes (selected style)
+            borderColor = '#e74c3c' // Red
+            borderWidth = 2
           }
         }
         
-        if (isSelected) {
-          // Keep selected nodes with their selection styling
+        if (isSelected && !isInShortestPath) {
+          // Keep selected nodes with their selection styling (unless they're in shortest path)
           borderColor = '#e74c3c' // Red border for selected
           borderWidth = 2
         }
@@ -146,23 +158,31 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
         const state = useSelectionStore.getState()
         const selectedEdges = state.getSelectedEdges()
         const isSelected = selectedEdges.some(e => e.id === edge)
-        const isInPath = state.isEdgeInPath(edge)
+        const isInAllPaths = state.isEdgeInPath(edge)
+        const isInShortestPath = state.isEdgeInShortestPath(edge)
         const pathHighlight = state.getPathHighlight()
         
         // Determine edge styling priority:
-        // 1. Path highlighting (highest priority)
-        // 2. Selection highlighting
-        // 3. Default styling
+        // 1. Shortest path (golden) - highest priority
+        // 2. All paths (red/selected style)
+        // 3. Selection highlighting  
+        // 4. Default styling
         
         let edgeColor = data.color || '#666'
         let edgeSize = Math.max(1, data.size || 1)
         
-        if (isInPath && pathHighlight.isActive) {
-          // Golden path edges with animation-like effect
-          edgeColor = '#ffd700' // Gold for path
-          edgeSize = Math.max(6, data.size || 4) // Thick golden path
+        if (pathHighlight.isActive) {
+          if (isInShortestPath) {
+            // Golden edges for shortest path
+            edgeColor = '#ffd700' // Gold for shortest path
+            edgeSize = Math.max(6, data.size || 4) // Thick golden path
+          } else if (isInAllPaths) {
+            // Red edges for alternative paths (selected style)
+            edgeColor = '#e74c3c' // Red for alternative paths
+            edgeSize = Math.max(4, data.size || 3) // Medium thickness
+          }
         } else if (isSelected) {
-          // Red selected edges
+          // Red selected edges (when no path highlighting)
           edgeColor = '#e74c3c'
           edgeSize = Math.max(4, data.size || 3)
         }
@@ -174,7 +194,7 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
           // Ensure edges are always visible
           hidden: false,
           // Add slight transparency to non-path edges when path is active
-          opacity: (pathHighlight.isActive && !isInPath && !isSelected) ? 0.3 : 1.0
+          opacity: (pathHighlight.isActive && !isInAllPaths && !isSelected) ? 0.3 : 1.0
         }
       }
     })
