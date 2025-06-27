@@ -74,3 +74,9 @@ pids
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Large data files (too big for regular Git)
+public/data/samples/*.json
+*.mjs
+*.png
+debug-screenshot.png
