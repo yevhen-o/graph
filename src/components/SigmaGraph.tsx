@@ -7,6 +7,7 @@ import { SupplyChainGenerator } from '../data/supplyChainGenerator'
 import { GraphUtils, ColorMode } from '../utils/graphUtils'
 import { SupplyChainGraph as SupplyChainGraphType, NodeType } from '../types/supplyChain'
 import GraphControls from './GraphControls'
+import { useSelectionStore } from '../store/selectionStore'
 
 interface SigmaGraphProps {
   nodeCount?: number
@@ -22,9 +23,6 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
   const containerRef = useRef<HTMLDivElement>(null)
   const sigmaRef = useRef<Sigma | null>(null)
   const graphRef = useRef<Graph | null>(null)
-  const [graphData, setGraphData] = useState<SupplyChainGraphType | null>(null)
-  const [fullGraphData, setFullGraphData] = useState<SupplyChainGraphType | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<NodeType[]>(Object.values(NodeType))
   const [selectedTiers, setSelectedTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
   const [currentDataset, setCurrentDataset] = useState<string | undefined>(undefined)
@@ -32,6 +30,18 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
   const [availableTiers, setAvailableTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
   const [, setHasPreCalculatedPositions] = useState(false)
   const [colorMode, setColorMode] = useState<ColorMode>('nodeType')
+  
+  // Store data and actions
+  const { 
+    addNode, 
+    addEdge, 
+    graphData, 
+    fullGraphData, 
+    isLoading,
+    setGraphData,
+    setFullGraphData,
+    setLoading
+  } = useSelectionStore()
 
   const initializeSigma = useCallback((data: SupplyChainGraphType, mode?: ColorMode) => {
     if (!containerRef.current) return
@@ -100,12 +110,24 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     // Add click handlers
     sigma.on('clickNode', (event) => {
       console.log('Clicked node:', event.node)
+      const nodeData = data.nodes.find(n => n.id === event.node)
+      if (nodeData) {
+        addNode(nodeData)
+      }
+    })
+    
+    sigma.on('clickEdge', (event) => {
+      console.log('Clicked edge:', event.edge)
+      const edgeData = data.edges.find(e => e.id === event.edge)
+      if (edgeData) {
+        addEdge(edgeData)
+      }
     })
     
   }, [enablePhysics, useStaticLayout, colorMode])
 
   const generateGraph = useCallback(async () => {
-    setIsLoading(true)
+    setLoading(true)
     
     try {
       console.log('Generating graph with', nodeCount, 'nodes')
@@ -132,15 +154,15 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       setCurrentDataset(undefined) // Clear current dataset when generating new graph
       initializeSigma(filteredGraph)
       
-      setIsLoading(false)
+      setLoading(false)
     } catch (error) {
       console.error('Error generating graph:', error)
-      setIsLoading(false)
+      setLoading(false)
     }
   }, [nodeCount, initializeSigma])
 
   const handleLoadSampleData = useCallback(async (filename: string) => {
-    setIsLoading(true)
+    setLoading(true)
     
     try {
       console.log('Loading sample data:', filename)
@@ -167,10 +189,10 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       setCurrentDataset(filename)
       initializeSigma(filteredGraph)
       
-      setIsLoading(false)
+      setLoading(false)
     } catch (error) {
       console.error('Error loading sample data:', error)
-      setIsLoading(false)
+      setLoading(false)
     }
   }, [initializeSigma])
 
@@ -233,7 +255,7 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
   useEffect(() => {
     // Only generate on initial mount
     const initialGenerate = async () => {
-      setIsLoading(true)
+      setLoading(true)
       try {
         const rawGraph = SupplyChainGenerator.generateGraph(nodeCount, 'Electronics', 'Global')
         setFullGraphData(rawGraph)
@@ -248,10 +270,10 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
         setGraphData(rawGraph)
         setCurrentDataset(undefined)
         initializeSigma(rawGraph)
-        setIsLoading(false)
+        setLoading(false)
       } catch (error) {
         console.error('Error generating initial graph:', error)
-        setIsLoading(false)
+        setLoading(false)
       }
     }
     
@@ -277,6 +299,14 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       window.removeEventListener('resize', handleResize)
     }
   }, [])
+
+  // Effect to refresh graph when data changes (e.g., risk score updates)
+  useEffect(() => {
+    if (graphData && sigmaRef.current) {
+      console.log('Graph data changed, refreshing visualization')
+      initializeSigma(graphData, colorMode)
+    }
+  }, [graphData, colorMode, initializeSigma])
 
   return (
     <div className="w-full h-full flex">

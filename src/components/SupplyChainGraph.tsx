@@ -5,6 +5,7 @@ import { GraphUtils, CosmosGraphData, ColorMode } from '../utils/graphUtils'
 import { SupplyChainGraph as SupplyChainGraphType, NodeType } from '../types/supplyChain'
 import { PerformanceUtils } from '../utils/performanceUtils'
 import GraphControls from './GraphControls'
+import { useSelectionStore } from '../store/selectionStore'
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -28,9 +29,6 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const cosmosRef = useRef<Graph | null>(null)
-  const [graphData, setGraphData] = useState<SupplyChainGraphType | null>(null)
-  const [fullGraphData, setFullGraphData] = useState<SupplyChainGraphType | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<NodeType[]>(Object.values(NodeType))
   const [selectedTiers, setSelectedTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
   const [currentZoomLevel] = useState(1.0)
@@ -41,8 +39,19 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
   const [availableTiers, setAvailableTiers] = useState<number[]>([0, 1, 2, 3, 4, 5])
   const [, setHasPreCalculatedPositions] = useState(false)
   const [colorMode, setColorMode] = useState<ColorMode>('nodeType')
+  
+  // Store data and actions
+  const { 
+    addNode,
+    graphData, 
+    fullGraphData, 
+    isLoading,
+    setGraphData,
+    setFullGraphData,
+    setLoading
+  } = useSelectionStore()
 
-  const initializeCosmos = useCallback((data: CosmosGraphData) => {
+  const initializeCosmos = useCallback((data: CosmosGraphData, originalData?: SupplyChainGraphType) => {
     if (!containerRef.current) return
     
     // Clean up previous Cosmos instance
@@ -76,8 +85,9 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       onClick: (index: number | undefined, _pointPosition: [number, number] | undefined, _event: MouseEvent) => {
         if (index !== undefined) {
           console.log('Clicked point index:', index)
-          if (data.nodes[index]) {
-            console.log('Node:', data.nodes[index])
+          if (originalData && originalData.nodes[index]) {
+            console.log('Node:', originalData.nodes[index])
+            addNode(originalData.nodes[index])
           }
         }
       }
@@ -199,7 +209,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
   }, [performanceMode])
 
   const generateGraph = useCallback(async () => {
-    setIsLoading(true)
+    setLoading(true)
     setRenderProgress(0)
     
     try {
@@ -267,21 +277,21 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       await PerformanceUtils.measureAsyncPerformance(
         'Graph Rendering',
         async () => {
-          initializeCosmos(cosmosData)
+          initializeCosmos(cosmosData, optimizedGraph)
           await PerformanceUtils.nextFrame()
         }
       )
       
       setRenderProgress(100)
-      setIsLoading(false)
+      setLoading(false)
     } catch (error) {
       console.error('Error generating graph:', error)
-      setIsLoading(false)
+      setLoading(false)
     }
   }, [nodeCount, currentZoomLevel, performanceMode, applyLevelOfDetail, initializeCosmos, colorMode])
 
   const handleLoadSampleData = useCallback(async (filename: string) => {
-    setIsLoading(true)
+    setLoading(true)
     setRenderProgress(0)
     
     try {
@@ -314,16 +324,16 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       await PerformanceUtils.measureAsyncPerformance(
         'Graph Rendering',
         async () => {
-          initializeCosmos(cosmosData)
+          initializeCosmos(cosmosData, optimizedGraph)
           await PerformanceUtils.nextFrame()
         }
       )
       
       setRenderProgress(100)
-      setIsLoading(false)
+      setLoading(false)
     } catch (error) {
       console.error('Error loading sample data:', error)
-      setIsLoading(false)
+      setLoading(false)
     }
   }, [currentZoomLevel, applyLevelOfDetail, initializeCosmos, colorMode])
 
@@ -343,7 +353,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       await PerformanceUtils.measureAsyncPerformance(
         'Filter Update',
         async () => {
-          initializeCosmos(cosmosData)
+          initializeCosmos(cosmosData, optimizedGraph)
           await PerformanceUtils.nextFrame()
         }
       )
@@ -359,7 +369,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       await PerformanceUtils.measureAsyncPerformance(
         'Color Mode Update',
         async () => {
-          initializeCosmos(cosmosData)
+          initializeCosmos(cosmosData, graphData)
           await PerformanceUtils.nextFrame()
         }
       )
@@ -400,7 +410,7 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
   useEffect(() => {
     // Only generate on initial mount
     const initialGenerate = async () => {
-      setIsLoading(true)
+      setLoading(true)
       setRenderProgress(0)
       try {
         const rawGraph = SupplyChainGenerator.generateGraph(nodeCount, 'Electronics', 'Global')
@@ -421,16 +431,16 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
         await PerformanceUtils.measureAsyncPerformance(
           'Graph Rendering',
           async () => {
-            initializeCosmos(cosmosData)
+            initializeCosmos(cosmosData, optimizedGraph)
             await PerformanceUtils.nextFrame()
           }
         )
         
         setRenderProgress(100)
-        setIsLoading(false)
+        setLoading(false)
       } catch (error) {
         console.error('Error generating initial graph:', error)
-        setIsLoading(false)
+        setLoading(false)
       }
     }
     
@@ -458,6 +468,15 @@ const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       window.removeEventListener('resize', handleResize)
     }
   }, [])
+
+  // Effect to refresh graph when data changes (e.g., risk score updates)
+  useEffect(() => {
+    if (graphData && cosmosRef.current) {
+      console.log('Graph data changed, refreshing Cosmos visualization')
+      const cosmosData = GraphUtils.convertToCosmosFormat(graphData, colorMode)
+      initializeCosmos(cosmosData, graphData)
+    }
+  }, [graphData, colorMode, initializeCosmos])
 
   return (
     <div className="w-full h-full flex">

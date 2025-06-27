@@ -78,7 +78,7 @@ export class GraphUtils {
   ): Graph {
     const g = new Graph({ type: "directed", multi: false });
 
-    graph.nodes.forEach((node, index) => {
+    graph.nodes.forEach((node) => {
       const nodeColor = colorMode === 'riskScore' ? this.getRiskScoreColor(node) : this.getNodeColor(node.type);
       
       const nodeSize = this.getNodeSize(node);
