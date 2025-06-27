@@ -77,6 +77,8 @@ pids
 
 # Large data files (too big for regular Git)
 public/data/samples/*.json
+src/data/samples/sample_100000_global.json
+src/data/samples/sample_10000_global.json
 *.mjs
 *.png
 debug-screenshot.png
