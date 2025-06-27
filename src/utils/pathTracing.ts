@@ -250,6 +250,180 @@ export class PathTracer {
   }
 
   /**
+   * Find shortest path between two nodes using Dijkstra's algorithm
+   * Returns the optimal path considering edge weights
+   */
+  findShortestPath(sourceId: string, targetId: string): {
+    path: string[]
+    totalWeight: number
+    edges: string[]
+  } | null {
+    // Priority queue implementation using array (for simplicity)
+    interface QueueItem {
+      nodeId: string
+      distance: number
+      path: string[]
+      edgePath: string[]
+    }
+
+    const distances = new Map<string, number>()
+    const previous = new Map<string, string>()
+    const visited = new Set<string>()
+    const queue: QueueItem[] = []
+
+    // Initialize distances
+    this.graph.nodes.forEach(node => {
+      distances.set(node.id, node.id === sourceId ? 0 : Infinity)
+    })
+
+    // Start with source node
+    queue.push({
+      nodeId: sourceId,
+      distance: 0,
+      path: [sourceId],
+      edgePath: []
+    })
+
+    while (queue.length > 0) {
+      // Get node with minimum distance
+      queue.sort((a, b) => a.distance - b.distance)
+      const current = queue.shift()!
+
+      if (visited.has(current.nodeId)) continue
+      visited.add(current.nodeId)
+
+      // Found target
+      if (current.nodeId === targetId) {
+        return {
+          path: current.path,
+          totalWeight: current.distance,
+          edges: current.edgePath
+        }
+      }
+
+      // Check all neighbors
+      const neighbors = this.adjacencyMap.get(current.nodeId) || []
+      neighbors.forEach(neighborId => {
+        if (visited.has(neighborId)) return
+
+        const edge = this.edgeMap.get(`${current.nodeId}->${neighborId}`)
+        const edgeWeight = edge?.weight || 1
+        const newDistance = current.distance + edgeWeight
+
+        if (newDistance < (distances.get(neighborId) || Infinity)) {
+          distances.set(neighborId, newDistance)
+          previous.set(neighborId, current.nodeId)
+
+          queue.push({
+            nodeId: neighborId,
+            distance: newDistance,
+            path: [...current.path, neighborId],
+            edgePath: edge ? [...current.edgePath, edge.id] : current.edgePath
+          })
+        }
+      })
+    }
+
+    return null // No path found
+  }
+
+  /**
+   * Find multiple alternative paths between two nodes
+   * Returns up to maxPaths different routes
+   */
+  findAlternativePaths(sourceId: string, targetId: string, maxPaths: number = 3): Array<{
+    path: string[]
+    totalWeight: number
+    edges: string[]
+  }> {
+    const allPaths: Array<{
+      path: string[]
+      totalWeight: number
+      edges: string[]
+    }> = []
+
+    // Use modified Dijkstra to find multiple paths
+    const findPathWithExclusion = (excludedEdges: Set<string>) => {
+      const distances = new Map<string, number>()
+      const visited = new Set<string>()
+      const queue: Array<{
+        nodeId: string
+        distance: number
+        path: string[]
+        edgePath: string[]
+      }> = []
+
+      this.graph.nodes.forEach(node => {
+        distances.set(node.id, node.id === sourceId ? 0 : Infinity)
+      })
+
+      queue.push({
+        nodeId: sourceId,
+        distance: 0,
+        path: [sourceId],
+        edgePath: []
+      })
+
+      while (queue.length > 0) {
+        queue.sort((a, b) => a.distance - b.distance)
+        const current = queue.shift()!
+
+        if (visited.has(current.nodeId)) continue
+        visited.add(current.nodeId)
+
+        if (current.nodeId === targetId) {
+          return {
+            path: current.path,
+            totalWeight: current.distance,
+            edges: current.edgePath
+          }
+        }
+
+        const neighbors = this.adjacencyMap.get(current.nodeId) || []
+        neighbors.forEach(neighborId => {
+          if (visited.has(neighborId)) return
+
+          const edge = this.edgeMap.get(`${current.nodeId}->${neighborId}`)
+          if (!edge || excludedEdges.has(edge.id)) return
+
+          const edgeWeight = edge.weight || 1
+          const newDistance = current.distance + edgeWeight
+
+          if (newDistance < (distances.get(neighborId) || Infinity)) {
+            distances.set(neighborId, newDistance)
+
+            queue.push({
+              nodeId: neighborId,
+              distance: newDistance,
+              path: [...current.path, neighborId],
+              edgePath: [...current.edgePath, edge.id]
+            })
+          }
+        })
+      }
+
+      return null
+    }
+
+    const excludedEdges = new Set<string>()
+
+    // Find paths by progressively excluding edges from previous paths
+    for (let i = 0; i < maxPaths; i++) {
+      const path = findPathWithExclusion(excludedEdges)
+      if (!path) break
+
+      allPaths.push(path)
+
+      // Exclude one edge from this path for next iteration
+      if (path.edges.length > 0) {
+        excludedEdges.add(path.edges[0])
+      }
+    }
+
+    return allPaths.sort((a, b) => a.totalWeight - b.totalWeight)
+  }
+
+  /**
    * Calculate impact score based on affected nodes' importance and risk
    */
   private calculateImpactScore(affectedNodeIds: Set<string>): number {

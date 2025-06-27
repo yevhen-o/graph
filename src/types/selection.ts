@@ -10,6 +10,20 @@ export interface SelectedItem {
   timestamp: number
 }
 
+export interface PathHighlight {
+  isActive: boolean
+  sourceNodeId: string | null
+  targetNodeId: string | null
+  pathNodes: Set<string>
+  pathEdges: Set<string>
+  paths: string[][] // Multiple paths if available
+  pathMetrics: {
+    distance: number
+    totalWeight: number
+    riskScore: number
+  } | null
+}
+
 export interface CrisisState {
   crisisMode: boolean
   crisisSource: string | null
@@ -31,6 +45,8 @@ export interface SelectionState {
   isLoading: boolean
   // Crisis simulation state
   crisis: CrisisState
+  // Path highlighting state
+  pathHighlight: PathHighlight
 }
 
 export interface SelectionActions {
@@ -60,6 +76,12 @@ export interface SelectionActions {
   isEdgeAffectedByCrisis: (edgeId: string) => boolean
   getCrisisImpactStats: () => { affectedNodes: number; totalImpact: number; criticalPaths: number }
   toggleCrisisLegend: () => void
+  // Path highlighting actions
+  findPathsBetweenSelected: () => void
+  clearPathHighlight: () => void
+  isNodeInPath: (nodeId: string) => boolean
+  isEdgeInPath: (edgeId: string) => boolean
+  getPathHighlight: () => PathHighlight
 }
 
 export type SelectionStore = SelectionState & SelectionActions

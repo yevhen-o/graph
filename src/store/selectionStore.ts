@@ -26,6 +26,17 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
     showCrisisLegend: false
   },
 
+  // Path highlighting state
+  pathHighlight: {
+    isActive: false,
+    sourceNodeId: null,
+    targetNodeId: null,
+    pathNodes: new Set(),
+    pathEdges: new Set(),
+    paths: [],
+    pathMetrics: null
+  },
+
   // Actions
   addNode: (node: SupplyChainNode) => {
     set((state) => {
@@ -45,13 +56,29 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
         const [item] = updatedItems.splice(existingIndex, 1)
         updatedItems.unshift(item)
         
-        return {
+        const newState = {
           selectedItems: updatedItems,
           isPanelOpen: true,
           activeAccordionItems: state.activeAccordionItems.includes(node.id) 
             ? state.activeAccordionItems 
             : [node.id, ...state.activeAccordionItems]
         }
+
+        // Auto-trigger path finding if exactly 2 nodes are selected
+        setTimeout(() => {
+          const currentState = get()
+          const selectedNodes = currentState.getSelectedNodes()
+          
+          if (selectedNodes.length === 2) {
+            console.log('Auto-triggering path finding between 2 selected nodes')
+            currentState.findPathsBetweenSelected()
+          } else if (selectedNodes.length !== 2 && currentState.pathHighlight.isActive) {
+            console.log('Clearing path highlight due to selection change')
+            currentState.clearPathHighlight()
+          }
+        }, 0)
+
+        return newState
       }
 
       // Add new item
@@ -69,11 +96,27 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
         updatedItems.splice(state.maxSelections)
       }
 
-      return {
+      const newState = {
         selectedItems: updatedItems,
         isPanelOpen: true,
         activeAccordionItems: [node.id, ...state.activeAccordionItems]
       }
+
+      // Auto-trigger path finding if exactly 2 nodes are selected
+      setTimeout(() => {
+        const currentState = get()
+        const selectedNodes = currentState.getSelectedNodes()
+        
+        if (selectedNodes.length === 2) {
+          console.log('Auto-triggering path finding between 2 selected nodes')
+          currentState.findPathsBetweenSelected()
+        } else if (selectedNodes.length !== 2 && currentState.pathHighlight.isActive) {
+          console.log('Clearing path highlight due to selection change')
+          currentState.clearPathHighlight()
+        }
+      }, 0)
+
+      return newState
     })
   },
 
@@ -128,16 +171,47 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
   },
 
   removeItem: (id: string) => {
-    set((state) => ({
-      selectedItems: state.selectedItems.filter(item => item.id !== id),
-      activeAccordionItems: state.activeAccordionItems.filter(itemId => itemId !== id)
-    }))
+    set((state) => {
+      const newState = {
+        selectedItems: state.selectedItems.filter(item => item.id !== id),
+        activeAccordionItems: state.activeAccordionItems.filter(itemId => itemId !== id)
+      }
+
+      // Clear path highlight if selection changes from 2 nodes
+      setTimeout(() => {
+        const currentState = get()
+        const selectedNodes = currentState.getSelectedNodes()
+        
+        if (selectedNodes.length !== 2 && currentState.pathHighlight.isActive) {
+          console.log('Clearing path highlight due to item removal')
+          currentState.clearPathHighlight()
+        }
+      }, 0)
+
+      return newState
+    })
   },
 
   clearAll: () => {
-    set({
-      selectedItems: [],
-      activeAccordionItems: []
+    set((state) => {
+      // Clear path highlight when clearing all selections
+      if (state.pathHighlight.isActive) {
+        console.log('Clearing path highlight due to clear all')
+      }
+      
+      return {
+        selectedItems: [],
+        activeAccordionItems: [],
+        pathHighlight: {
+          isActive: false,
+          sourceNodeId: null,
+          targetNodeId: null,
+          pathNodes: new Set(),
+          pathEdges: new Set(),
+          paths: [],
+          pathMetrics: null
+        }
+      }
     })
   },
 
@@ -340,5 +414,98 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
         showCrisisLegend: !state.crisis.showCrisisLegend
       }
     }))
+  },
+
+  // Path highlighting actions
+  findPathsBetweenSelected: () => {
+    const state = get()
+    const selectedNodes = state.getSelectedNodes()
+    
+    if (selectedNodes.length !== 2 || !state.graphData) {
+      return
+    }
+
+    const [sourceNode, targetNode] = selectedNodes
+    const pathTracer = new PathTracer(state.graphData)
+    
+    // Use optimized shortest path algorithm
+    const shortestPathResult = pathTracer.findShortestPath(sourceNode.id, targetNode.id)
+    
+    if (!shortestPathResult) {
+      console.log('No path found between', sourceNode.label, 'and', targetNode.label)
+      return
+    }
+
+    const { path: shortestPath, totalWeight, edges: pathEdgeIds } = shortestPathResult
+
+    // Collect all nodes and edges in the path
+    const pathNodes = new Set(shortestPath)
+    const pathEdges = new Set(pathEdgeIds)
+    
+    // Calculate average risk score of path nodes
+    let totalRisk = 0
+    shortestPath.forEach(nodeId => {
+      const node = state.graphData!.nodes.find(n => n.id === nodeId)
+      if (node) {
+        totalRisk += node.riskScore || 0
+      }
+    })
+    
+    const avgRisk = totalRisk / shortestPath.length
+
+    // Also get alternative paths for advanced users
+    const alternativePaths = pathTracer.findAlternativePaths(sourceNode.id, targetNode.id, 3)
+    const allPaths = alternativePaths.map(p => p.path)
+
+    console.log('Path found:', {
+      from: sourceNode.label,
+      to: targetNode.label,
+      hops: shortestPath.length - 1,
+      weight: totalWeight,
+      risk: avgRisk,
+      path: shortestPath
+    })
+
+    set({
+      pathHighlight: {
+        isActive: true,
+        sourceNodeId: sourceNode.id,
+        targetNodeId: targetNode.id,
+        pathNodes,
+        pathEdges,
+        paths: allPaths,
+        pathMetrics: {
+          distance: shortestPath.length - 1,
+          totalWeight,
+          riskScore: avgRisk
+        }
+      }
+    })
+  },
+
+  clearPathHighlight: () => {
+    set({
+      pathHighlight: {
+        isActive: false,
+        sourceNodeId: null,
+        targetNodeId: null,
+        pathNodes: new Set(),
+        pathEdges: new Set(),
+        paths: [],
+        pathMetrics: null
+      }
+    })
+  },
+
+  isNodeInPath: (nodeId: string) => {
+    return get().pathHighlight.pathNodes.has(nodeId)
+  },
+
+  isEdgeInPath: (edgeId: string) => {
+    return get().pathHighlight.pathEdges.has(edgeId)
+  },
+
+  getPathHighlight: () => {
+    return get().pathHighlight
   }
 }))

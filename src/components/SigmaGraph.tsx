@@ -42,7 +42,8 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
     setFullGraphData,
     setLoading,
     crisis,
-    selectedItems
+    selectedItems,
+    pathHighlight
   } = useSelectionStore()
 
   const initializeSigma = useCallback((data: SupplyChainGraphType, mode?: ColorMode) => {
@@ -96,37 +97,84 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       allowInvalidContainer: false,
       // Explicitly enable edge events  
       enableEdgeEvents: true,
-      enableEdgeClickEvents: true,
-      enableEdgeHoverEvents: true,
-      enableEdgeWheelEvents: true,
       // Node settings
       defaultNodeColor: '#999',
       // Edge settings - thin edges with larger hit area for clicking
       defaultEdgeColor: '#666',
-      defaultEdgeThickness: 1, // Thin visual edges
-      // Increase hit area for edge interaction without making edges visually thick
-      edgeHitTestThreshold: 8, // Larger invisible hit area for clicking
       // Custom reducers for interactive styling
       nodeReducer: (node, data) => {
+        const state = useSelectionStore.getState()
+        const selectedNodes = state.getSelectedNodes()
+        const isSelected = selectedNodes.some(n => n.id === node)
+        const isInPath = state.isNodeInPath(node)
+        const pathHighlight = state.getPathHighlight()
+        
+        // Determine node styling based on state
+        let nodeColor = data.color || '#999'
+        let nodeSize = data.size || 8
+        let borderColor = undefined
+        let borderWidth = 0
+        
+        if (isInPath && pathHighlight.isActive) {
+          // Golden border for path nodes
+          borderColor = '#ffd700' // Gold
+          borderWidth = 3
+          
+          // Make start and end nodes larger and more prominent
+          if (node === pathHighlight.sourceNodeId || node === pathHighlight.targetNodeId) {
+            nodeSize = Math.max(nodeSize * 1.5, 12)
+            borderWidth = 4
+            borderColor = '#ff8c00' // Dark orange for endpoints
+          }
+        }
+        
+        if (isSelected) {
+          // Keep selected nodes with their selection styling
+          borderColor = '#e74c3c' // Red border for selected
+          borderWidth = 2
+        }
+        
         return {
           ...data,
-          size: data.size || 8, // Ensure nodes have minimum size
-          color: data.color || '#999'
+          size: nodeSize,
+          color: nodeColor,
+          borderColor,
+          borderWidth
         }
       },
       edgeReducer: (edge, data) => {
         const state = useSelectionStore.getState()
         const selectedEdges = state.getSelectedEdges()
         const isSelected = selectedEdges.some(e => e.id === edge)
+        const isInPath = state.isEdgeInPath(edge)
+        const pathHighlight = state.getPathHighlight()
+        
+        // Determine edge styling priority:
+        // 1. Path highlighting (highest priority)
+        // 2. Selection highlighting
+        // 3. Default styling
+        
+        let edgeColor = data.color || '#666'
+        let edgeSize = Math.max(1, data.size || 1)
+        
+        if (isInPath && pathHighlight.isActive) {
+          // Golden path edges with animation-like effect
+          edgeColor = '#ffd700' // Gold for path
+          edgeSize = Math.max(6, data.size || 4) // Thick golden path
+        } else if (isSelected) {
+          // Red selected edges
+          edgeColor = '#e74c3c'
+          edgeSize = Math.max(4, data.size || 3)
+        }
         
         return {
           ...data,
-          // Very thin edges by default, thicker when selected
-          size: isSelected ? Math.max(4, data.size || 3) : Math.max(1, data.size || 1),
-          // Different colors for selected edges
-          color: isSelected ? '#e74c3c' : (data.color || '#666'),
+          size: edgeSize,
+          color: edgeColor,
           // Ensure edges are always visible
           hidden: false,
+          // Add slight transparency to non-path edges when path is active
+          opacity: (pathHighlight.isActive && !isInPath && !isSelected) ? 0.3 : 1.0
         }
       }
     })
@@ -422,6 +470,18 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       sigmaRef.current.refresh()
     }
   }, [selectedItems])
+
+  // Effect to refresh visualization when path highlighting changes
+  useEffect(() => {
+    if (sigmaRef.current) {
+      if (pathHighlight.isActive) {
+        console.log('Path highlighting activated, refreshing graph')
+      } else {
+        console.log('Path highlighting cleared, refreshing graph')
+      }
+      sigmaRef.current.refresh()
+    }
+  }, [pathHighlight])
 
   return (
     <div className="w-full h-full flex">
