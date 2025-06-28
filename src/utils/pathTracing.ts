@@ -330,14 +330,6 @@ export class PathTracer {
     dfs(sourceId, [sourceId], 0)
   }
 
-  // Keep the old method for backward compatibility
-  private findDirectionalPaths(sourceId: string, targetId: string, paths: string[][], visited: Set<string>): void {
-    const addPath = (path: string[]) => {
-      paths.push([...path])
-      return true
-    }
-    this.findDirectionalPathsWithLimit(sourceId, targetId, 8, addPath)
-  }
 
   /**
    * Find shortest path between two nodes using Dijkstra's algorithm
@@ -443,7 +435,7 @@ export class PathTracer {
     totalWeight: number
     edges: string[]
   }> {
-    const { isDirectional = true } = options
+    const { isDirectional: _isDirectional = true } = options
     const allPaths: Array<{
       path: string[]
       totalWeight: number
