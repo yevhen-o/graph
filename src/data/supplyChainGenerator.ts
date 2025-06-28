@@ -92,16 +92,34 @@ export class SupplyChainGenerator {
 
   static async loadSampleData(filename: string): Promise<SupplyChainGraph> {
     try {
-      const response = await fetch(`/data/samples/${filename}`);
+      console.log(`Loading sample data from: /data/samples/${filename}`)
+      
+      // Try local file first
+      let response = await fetch(`/data/samples/${filename}`)
+      
+      // If local file fails (e.g., on Vercel with large files), try GitHub raw URL
       if (!response.ok) {
-        throw new Error(`Failed to load sample data: ${response.statusText}`);
+        const githubUrl = `https://raw.githubusercontent.com/yevhen-o/graph/main/public/data/samples/${filename}`
+        console.log(`Local file failed, trying GitHub raw URL: ${githubUrl}`)
+        response = await fetch(githubUrl)
       }
-      const data = await response.json();
-      return data as SupplyChainGraph;
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load ${filename}: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      console.log(`Successfully loaded ${filename}:`, {
+        nodes: data.nodes?.length || 0,
+        edges: data.edges?.length || 0,
+        metadata: data.metadata
+      })
+      
+      return data as SupplyChainGraph
     } catch (error) {
-      console.error("Error loading sample data:", error);
+      console.error(`Error loading sample data ${filename}:`, error)
       // Fallback to generated data
-      return this.generateSmallTestGraph();
+      return this.generateSmallTestGraph()
     }
   }
 
