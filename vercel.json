@@ -21,7 +21,7 @@
       ]
     },
     {
-      "source": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg))",
+      "source": "/assets/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -29,10 +29,5 @@
         }
       ]
     }
-  ],
-  "functions": {
-    "src/api/*.ts": {
-      "runtime": "nodejs18.x"
-    }
-  }
+  ]
 }
