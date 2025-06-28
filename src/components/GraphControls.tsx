@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { NodeType } from '../types/supplyChain'
+import { NodeType, SupplyChainGraph } from '../types/supplyChain'
 import { SupplyChainGenerator } from '../data/supplyChainGenerator'
 import { GraphUtils, ColorMode } from '../utils/graphUtils'
 import CrisisControlPanel from './CrisisControlPanel'
@@ -23,6 +23,7 @@ interface GraphControlsProps {
   onExportPNG: () => void
   physicsEnabled: boolean
   onLoadSampleData?: (filename: string) => void
+  onLoadCustomData?: (data: SupplyChainGraph) => void
   currentDataset?: string
   availableNodeTypes?: NodeType[]
   availableTiers?: number[]
@@ -52,6 +53,7 @@ const GraphControls: React.FC<GraphControlsProps> = ({
   onExportPNG,
   physicsEnabled,
   onLoadSampleData,
+  onLoadCustomData,
   currentDataset,
   availableNodeTypes,
   availableTiers,
@@ -59,6 +61,10 @@ const GraphControls: React.FC<GraphControlsProps> = ({
   onColorModeChange
 }) => {
   const [isExpanded, setIsExpanded] = useState(true)
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string>('')
   
   // Use available options or fallback to all options
   const allNodeTypes = availableNodeTypes || Object.values(NodeType)
@@ -101,6 +107,300 @@ const GraphControls: React.FC<GraphControlsProps> = ({
 
   const handleClearAllFilters = () => {
     onFilterChange(allNodeTypes, allTiers)
+  }
+
+  const autoFixDataFormat = (data: any): any => {
+    if (!data || !data.nodes) return data
+
+    console.log('🔧 Auto-fixing data format issues...')
+    
+    // Fix nodes: add missing labels and other common issues
+    const fixedNodes = data.nodes.map((node: any, index: number) => {
+      const fixedNode = { ...node }
+      
+      // Auto-generate label if missing
+      if (!fixedNode.label) {
+        fixedNode.label = fixedNode.id || fixedNode.name || `Node ${index}`
+        if (fixedNode.label !== fixedNode.id) {
+          console.log(`🔧 Fixed node ${index}: added label "${fixedNode.label}"`)
+        }
+      }
+      
+      // Ensure tier is a number
+      if (typeof fixedNode.tier === 'string') {
+        fixedNode.tier = parseInt(fixedNode.tier, 10) || 0
+      }
+      
+      return fixedNode
+    })
+
+    // Fix edges: ensure all required fields
+    const fixedEdges = data.edges?.map((edge: any, index: number) => {
+      const fixedEdge = { ...edge }
+      
+      // Auto-generate edge ID if missing
+      if (!fixedEdge.id) {
+        fixedEdge.id = `edge_${index}`
+      }
+      
+      // Set default edge type if missing
+      if (!fixedEdge.type) {
+        fixedEdge.type = 'material_flow'
+      }
+      
+      // Ensure weight is a number
+      if (typeof fixedEdge.weight !== 'number') {
+        fixedEdge.weight = 1.0
+      }
+      
+      return fixedEdge
+    }) || []
+
+    const result = {
+      ...data,
+      nodes: fixedNodes,
+      edges: fixedEdges
+    }
+
+    console.log(`🔧 Auto-fix complete: ${fixedNodes.length} nodes, ${fixedEdges.length} edges`)
+    return result
+  }
+
+  const validateSupplyChainData = (data: any): { isValid: boolean; error?: string } => {
+    console.log('Validating uploaded data structure:', {
+      type: typeof data,
+      keys: Object.keys(data || {}),
+      nodesType: typeof data?.nodes,
+      nodesLength: data?.nodes?.length,
+      edgesType: typeof data?.edges,
+      edgesLength: data?.edges?.length,
+      metadataType: typeof data?.metadata,
+      metadataKeys: Object.keys(data?.metadata || {})
+    })
+
+    if (!data || typeof data !== 'object') {
+      return { isValid: false, error: 'Invalid JSON format' }
+    }
+
+    if (!data.nodes || !Array.isArray(data.nodes)) {
+      return { isValid: false, error: `Missing or invalid "nodes" array. Found: ${typeof data.nodes}. Available keys: [${Object.keys(data).join(', ')}]` }
+    }
+
+    if (!data.edges || !Array.isArray(data.edges)) {
+      return { isValid: false, error: `Missing or invalid "edges" array. Found: ${typeof data.edges}. Available keys: [${Object.keys(data).join(', ')}]` }
+    }
+
+    if (!data.metadata || typeof data.metadata !== 'object') {
+      return { isValid: false, error: `Missing or invalid "metadata" object. Found: ${typeof data.metadata}. Available keys: [${Object.keys(data).join(', ')}]` }
+    }
+
+    // Validate first few nodes for required fields with detailed debugging
+    for (let i = 0; i < Math.min(data.nodes.length, 3); i++) {
+      const node = data.nodes[i]
+      const nodeKeys = Object.keys(node || {})
+      
+      console.log(`Node ${i} structure:`, {
+        keys: nodeKeys,
+        id: node?.id,
+        label: node?.label,
+        type: node?.type,
+        tier: node?.tier,
+        tierType: typeof node?.tier
+      })
+      
+      const missingFields = []
+      if (!node.id) missingFields.push('id')
+      if (!node.label) missingFields.push('label')
+      if (!node.type) missingFields.push('type')
+      if (typeof node.tier !== 'number') missingFields.push(`tier (found: ${typeof node.tier}, value: ${node.tier})`)
+      
+      if (missingFields.length > 0) {
+        // Try to suggest field mapping if common alternatives exist
+        const suggestions = []
+        if (!node.id && (node.nodeId || node.node_id || node.name)) {
+          suggestions.push(`Consider mapping ${node.nodeId ? 'nodeId' : node.node_id ? 'node_id' : 'name'} → id`)
+        }
+        if (!node.label && (node.name || node.title || node.description)) {
+          suggestions.push(`Consider mapping ${node.name ? 'name' : node.title ? 'title' : 'description'} → label`)
+        }
+        if (!node.type && (node.category || node.class || node.nodeType)) {
+          suggestions.push(`Consider mapping ${node.category ? 'category' : node.class ? 'class' : 'nodeType'} → type`)
+        }
+        if (typeof node.tier !== 'number' && (node.level || node.depth || node.layer)) {
+          suggestions.push(`Consider mapping ${node.level ? 'level' : node.depth ? 'depth' : 'layer'} → tier`)
+        }
+        
+        const suggestionText = suggestions.length > 0 ? ` Suggestions: ${suggestions.join(', ')}` : ''
+        
+        return { 
+          isValid: false, 
+          error: `Node ${i}: missing/invalid fields: [${missingFields.join(', ')}]. Available fields: [${nodeKeys.join(', ')}].${suggestionText}` 
+        }
+      }
+    }
+
+    // Validate first few edges for required fields
+    for (let i = 0; i < Math.min(data.edges.length, 3); i++) {
+      const edge = data.edges[i]
+      if (!edge.id || !edge.source || !edge.target || !edge.type || typeof edge.weight !== 'number') {
+        return { isValid: false, error: `Edge ${i}: missing required fields (id, source, target, type, weight)` }
+      }
+    }
+
+    return { isValid: true }
+  }
+
+  const handleFileUpload = async (file: File) => {
+    if (!onLoadCustomData) return
+
+    setUploadStatus('uploading')
+    setUploadError(null)
+
+    // Set timeout for very large files to prevent browser hangs
+    const timeoutId = setTimeout(() => {
+      setUploadStatus('error')
+      setUploadProgress('')
+      setUploadError('File processing timed out. File may be too large or complex. Try a smaller dataset or contact support.')
+    }, 5 * 60 * 1000) // 5 minute timeout
+
+    try {
+      // File size validation - now supports very large files
+      const maxFileSize = 500 * 1024 * 1024 // 500MB limit
+      if (file.size > maxFileSize) {
+        setUploadStatus('error')
+        setUploadError(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is 500MB. This is a browser memory limit.`)
+        return
+      }
+
+      // Large file warning
+      if (file.size > 50 * 1024 * 1024) { // 50MB warning
+        setUploadError(`Very large file detected (${(file.size / 1024 / 1024).toFixed(1)}MB). Processing may take several minutes and use significant memory. Continue?`)
+        // Show the warning but allow processing
+      }
+
+      // Performance warning for large files
+      if (file.size > 2 * 1024 * 1024) { // 2MB warning
+        console.warn(`Large file detected (${(file.size / 1024 / 1024).toFixed(1)}MB). This may impact performance.`)
+      }
+
+      // Use progressive reading for larger files with status updates
+      let data: any
+      setUploadProgress('Reading file...')
+      
+      if (file.size > 10 * 1024 * 1024) { // 10MB threshold for progressive reading
+        console.log(`Processing large file: ${(file.size / 1024 / 1024).toFixed(1)}MB`)
+        const reader = new FileReader()
+        
+        data = await new Promise((resolve, reject) => {
+          reader.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const percentComplete = Math.round((e.loaded / e.total) * 100)
+              setUploadProgress(`Reading file... ${percentComplete}%`)
+            }
+          }
+          
+          reader.onload = (e) => {
+            try {
+              setUploadProgress('Parsing JSON...')
+              const result = JSON.parse(e.target?.result as string)
+              setUploadProgress('Processing data...')
+              resolve(result)
+            } catch (parseError) {
+              reject(new Error(`JSON parsing failed: ${parseError instanceof Error ? parseError.message : 'Invalid JSON'}`))
+            }
+          }
+          
+          reader.onerror = () => reject(new Error('Failed to read file'))
+          reader.readAsText(file)
+        })
+      } else {
+        const text = await file.text()
+        setUploadProgress('Parsing JSON...')
+        data = JSON.parse(text)
+      }
+      
+      // Auto-fix common data format issues before validation
+      const fixedData = autoFixDataFormat(data)
+      
+      const validation = validateSupplyChainData(fixedData)
+      if (!validation.isValid) {
+        setUploadStatus('error')
+        setUploadError(validation.error || 'Invalid data format')
+        return
+      }
+
+      // Performance warning and memory estimation for large datasets
+      const nodeCount = fixedData.nodes?.length || 0
+      const edgeCount = fixedData.edges?.length || 0
+      const estimatedMemoryMB = Math.round((nodeCount * 0.5 + edgeCount * 0.2) / 1000) // Rough estimate
+      
+      if (nodeCount > 100000 || edgeCount > 500000) {
+        console.warn(`MASSIVE dataset: ${nodeCount} nodes, ${edgeCount} edges. Estimated memory usage: ~${estimatedMemoryMB}MB`)
+        setUploadError(`⚠️ MASSIVE dataset (${nodeCount.toLocaleString()} nodes, ${edgeCount.toLocaleString()} edges). Est. memory: ~${estimatedMemoryMB}MB. Browser may become unresponsive. Consider using a smaller subset for visualization.`)
+      } else if (nodeCount > 10000 || edgeCount > 50000) {
+        console.warn(`Very large dataset: ${nodeCount} nodes, ${edgeCount} edges. Estimated memory usage: ~${estimatedMemoryMB}MB`)
+        setUploadError(`Very large dataset (${nodeCount.toLocaleString()} nodes, ${edgeCount.toLocaleString()} edges). Est. memory: ~${estimatedMemoryMB}MB. This may cause browser slowdown or crashes. Continue with caution.`)
+      } else if (nodeCount > 1000 || edgeCount > 5000) {
+        console.warn(`Large dataset detected: ${nodeCount} nodes, ${edgeCount} edges. Consider enabling performance mode.`)
+        setUploadError(`Large dataset (${nodeCount.toLocaleString()} nodes, ${edgeCount.toLocaleString()} edges). Performance may be impacted. Consider enabling Performance Mode in controls.`)
+      }
+      
+      // Log memory info if available
+      if ('memory' in performance) {
+        const memInfo = (performance as any).memory
+        console.log(`Memory before processing: Used: ${(memInfo.usedJSHeapSize / 1024 / 1024).toFixed(1)}MB, Limit: ${(memInfo.jsHeapSizeLimit / 1024 / 1024).toFixed(1)}MB`)
+      }
+
+      console.log('✅ Validation passed, calling onLoadCustomData with:', fixedData.nodes.length, 'nodes')
+      onLoadCustomData(fixedData)
+      console.log('✅ onLoadCustomData called, setting success status')
+      setUploadStatus('success')
+      setUploadProgress('')
+      clearTimeout(timeoutId)
+      setTimeout(() => setUploadStatus('idle'), 3000)
+    } catch (error) {
+      setUploadStatus('error')
+      setUploadProgress('')
+      clearTimeout(timeoutId)
+      setUploadError(error instanceof Error ? error.message : 'Failed to parse JSON file')
+    }
+  }
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      handleFileUpload(file)
+    }
+    // Reset input value to allow selecting the same file again
+    event.target.value = ''
+  }
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault()
+    setIsDragOver(false)
+    
+    const file = event.dataTransfer.files[0]
+    if (file) {
+      if (file.type === 'application/json' || file.name.endsWith('.json')) {
+        handleFileUpload(file)
+      } else {
+        setUploadStatus('error')
+        setUploadError('Please drop a valid JSON file (.json extension required)')
+      }
+    } else {
+      setUploadStatus('error')
+      setUploadError('No file detected. Please drop a JSON file.')
+    }
+  }
+
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    event.preventDefault()
+    setIsDragOver(false)
   }
 
   const nodeTypeColors = {
@@ -384,6 +684,81 @@ const GraphControls: React.FC<GraphControlsProps> = ({
                   <p>• Pre-generated realistic datasets</p>
                   <p>• Industry-specific supply chains</p>
                   <p>• Instant loading for demonstrations</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {onLoadCustomData && (
+            <div className="p-4 border-b border-gray-700">
+              <h3 className="font-semibold mb-3">Custom Data</h3>
+              <div className="space-y-3">
+                <div 
+                  className={`border-2 border-dashed rounded-lg p-4 transition-colors cursor-pointer ${
+                    isDragOver 
+                      ? 'border-blue-400 bg-blue-900/20' 
+                      : uploadStatus === 'error'
+                      ? 'border-red-400 bg-red-900/20'
+                      : uploadStatus === 'success'
+                      ? 'border-green-400 bg-green-900/20'
+                      : 'border-gray-600 hover:border-gray-500'
+                  }`}
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onClick={() => document.getElementById('file-input')?.click()}
+                >
+                  <input
+                    id="file-input"
+                    type="file"
+                    accept=".json"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    disabled={isLoading || uploadStatus === 'uploading'}
+                  />
+                  
+                  <div className="text-center">
+                    {uploadStatus === 'uploading' ? (
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border border-blue-400 border-t-transparent"></div>
+                        <span className="text-sm text-blue-400">
+                          {uploadProgress || 'Processing file...'}
+                        </span>
+                      </div>
+                    ) : uploadStatus === 'success' ? (
+                      <div className="text-green-400">
+                        <div className="text-lg mb-1">✅</div>
+                        <div className="text-sm">File loaded successfully!</div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-gray-400 mb-2">
+                          <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                        </div>
+                        <div className="text-sm text-gray-300 mb-1">
+                          Click to select or drag & drop JSON file
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Supply chain data format required
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {uploadError && (
+                  <div className="text-xs text-red-400 bg-red-900/20 rounded p-2">
+                    <p>❌ {uploadError}</p>
+                  </div>
+                )}
+                
+                <div className="text-xs text-gray-400">
+                  <p>• Upload your own supply chain JSON files (max 500MB)</p>
+                  <p>• Large files (&gt;50MB) may take several minutes to process</p>
+                  <p>• Must include nodes, edges, and metadata</p>
+                  <p>• Very large datasets may impact browser performance</p>
                 </div>
               </div>
             </div>

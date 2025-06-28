@@ -317,14 +317,12 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       setAvailableNodeTypes(dataNodeTypes)
       setAvailableTiers(dataTiers)
       
-      // Adjust selected filters to only include available options
-      const validNodeTypes = selectedNodeTypes.filter(type => dataNodeTypes.includes(type))
-      const validTiers = selectedTiers.filter(tier => dataTiers.includes(tier))
-      setSelectedNodeTypes(validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
-      setSelectedTiers(validTiers.length > 0 ? validTiers : dataTiers)
+      // Select all available node types and tiers on data source change
+      setSelectedNodeTypes(dataNodeTypes)
+      setSelectedTiers(dataTiers)
       
-      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
-      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, validTiers.length > 0 ? validTiers : dataTiers)
+      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, dataNodeTypes)
+      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, dataTiers)
       
       setGraphData(filteredGraph)
       setCurrentDataset(undefined) // Clear current dataset when generating new graph
@@ -352,14 +350,12 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       setAvailableNodeTypes(dataNodeTypes)
       setAvailableTiers(dataTiers)
       
-      // Adjust selected filters to only include available options
-      const validNodeTypes = selectedNodeTypes.filter(type => dataNodeTypes.includes(type))
-      const validTiers = selectedTiers.filter(tier => dataTiers.includes(tier))
-      setSelectedNodeTypes(validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
-      setSelectedTiers(validTiers.length > 0 ? validTiers : dataTiers)
+      // Select all available node types and tiers on data source change
+      setSelectedNodeTypes(dataNodeTypes)
+      setSelectedTiers(dataTiers)
       
-      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, validNodeTypes.length > 0 ? validNodeTypes : dataNodeTypes)
-      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, validTiers.length > 0 ? validTiers : dataTiers)
+      let filteredGraph = GraphUtils.filterGraphByNodeType(rawGraph, dataNodeTypes)
+      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, dataTiers)
       
       setGraphData(filteredGraph)
       setCurrentDataset(filename)
@@ -368,6 +364,38 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
       setLoading(false)
     } catch (error) {
       console.error('Error loading sample data:', error)
+      setLoading(false)
+    }
+  }, [initializeSigma])
+
+  const handleLoadCustomData = useCallback(async (data: SupplyChainGraphType) => {
+    setLoading(true)
+    
+    try {
+      console.log('Loading custom data:', data.nodes.length, 'nodes,', data.edges.length, 'edges')
+      
+      setFullGraphData(data)
+      
+      // Update available options based on actual data
+      const dataNodeTypes = [...new Set(data.nodes.map(n => n.type))] as NodeType[]
+      const dataTiers = [...new Set(data.nodes.map(n => n.tier))].sort((a, b) => a - b)
+      setAvailableNodeTypes(dataNodeTypes)
+      setAvailableTiers(dataTiers)
+      
+      // Select all available node types and tiers on data source change
+      setSelectedNodeTypes(dataNodeTypes)
+      setSelectedTiers(dataTiers)
+      
+      let filteredGraph = GraphUtils.filterGraphByNodeType(data, dataNodeTypes)
+      filteredGraph = GraphUtils.filterGraphByTier(filteredGraph, dataTiers)
+      
+      setGraphData(filteredGraph)
+      setCurrentDataset('Custom Data')
+      initializeSigma(filteredGraph)
+      
+      setLoading(false)
+    } catch (error) {
+      console.error('Error loading custom data:', error)
       setLoading(false)
     }
   }, [initializeSigma])
@@ -521,6 +549,7 @@ const SigmaGraph: React.FC<SigmaGraphProps> = ({
         onExportPNG={handleExportPNG}
         physicsEnabled={enablePhysics}
         onLoadSampleData={handleLoadSampleData}
+        onLoadCustomData={handleLoadCustomData}
         currentDataset={currentDataset}
         availableNodeTypes={availableNodeTypes}
         availableTiers={availableTiers}
